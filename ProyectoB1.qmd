@@ -1,0 +1,377 @@
+---
+title: "PROYECTO 1 ST"
+format: html
+editor: visual
+---
+
+# Series Temporales: Proyecto B1
+
+```{r, echo=FALSE, include=FALSE}
+#Librerías
+library(tsibble)
+library(dplyr)
+library(lubridate)
+library(fpp3)
+library(tidyverse)
+library(leaflet)
+library(zoo)
+library(fable)
+library(imputeTS)
+library(ggplot2)
+library(tidyr)
+library(stringr)
+library(patchwork)
+library(feasts)
+library(knitr)
+ruta<-"D:\\POLI\\Octavo semestres\\Series temporales\\Proyecto primer bimestre\\maate_concentracionso2_2021diciembre.csv"
+```
+
+```{r, echo=FALSE}
+datos<-read.csv(ruta)
+datos<-datos%>%mutate(FECHA=dmy(paste(DIA, MES, ANIO)))%>%select(-DIA, -MES, -ANIO, -ANIO_REPORT,-CODMES)
+
+datos<- datos%>%select(FECHA, everything())
+
+# prueba
+```
+
+Tomaremos como nuestro índice temporal a la variable *FECHA.*
+
+Ahora, el estudio se realizará en la provincia de Pichincha, entonces, las series temporales consideradas se basarán en cada estación de cada cantón de la ciudad de Quito. Como primera instancia, se realizará un análisis de características de dos estaciones de interés; Belisario y Carapungo, pues, ambas en teoría muestran un gran contraste en la tipología de exposición y las fuentes de emisión, considerando que Carapungo se enfrenta diariamente a una exposición y emisión alta de SO2 por la presencia de actividades humanas por medio de la vía PANAMERICANA NORTE.
+
+```{r, echo=FALSE}
+serie <- function(data, estacion_nombre) {
+  data %>%
+    select(FECHA, PROV, ESTACION, SO2) %>%
+    filter(PROV == "Pichincha", ESTACION == estacion_nombre) %>%
+    mutate(SO2_Numerico = as.numeric(str_replace_all(SO2, ",", "."))) %>%
+    drop_na(SO2_Numerico) %>%
+    select(FECHA, SO2 = SO2_Numerico) %>%
+    mutate(FECHA = as.Date(FECHA)) %>%
+    
+    as_tsibble(index = FECHA, key = NULL) %>%
+    
+
+    fill_gaps(SO2 = NA) %>% 
+    mutate(SO2 = imputeTS::na_seadec(SO2, algorithm = "interpolation"))
+}
+
+```
+
+```{r, include=FALSE, warning=FALSE}
+serie1 <- serie(datos, "Belisario")
+serie2 <- serie(datos, "Carapungo")
+```
+
+Con la frecuencia diaria, pues, el SO2 al ser una sustancia muy volatil, es de interés saber los días que se alcanzan los máximos durante el año. Además que el SO2 suele estar ligado a la actividad humana, entonces, la medición diaria del SO2 tiene la capacidad de mostrar patrones cruciales. (REFERENCIA)
+
+### Diversidad de las series de interés
+
+#### Tendencia
+
+```{r, echo=FALSE}
+p1<-serie1%>%autoplot(SO2)+labs(title = "Estación Belisario", x="Tiempo")
+p2<-serie2%>%autoplot(SO2)+labs(title = "Estación Carapungo", x="Tiempo")
+
+p1/p2 #patchwork
+```
+
+#### Estacionalidad
+
+```{r, echo=FALSE, warning=FALSE}
+g1<-serie1%>%fill_gaps()%>%gg_season(SO2, labels="both")+coord_cartesian(ylim = c(0, 40))+
+  labs(y="SO2 HG/m^3",title = "Cantidad de SO2 en el aire de Belisario")
+g2<-serie2%>%fill_gaps()%>%gg_season(SO2, labels="both")+coord_cartesian(ylim = c(0, 40))+
+  labs(y="SO2 HG/m^3",title = "Cantidad de SO2 en el aire de Carapungo")
+
+g1/g2 
+```
+
+En el gráfico anterior se muestra que los primeros y últimos días de cada año, se da un efecto descendiente del SO2 en el aire, un patrón que como se explicó, se lo localiza por una frecuencia diaria.
+
+#### Descomposición
+
+El siguiente objetivo es ver el comportamiento de cada componente de la descomposición de ambas series.
+
+```{r, echo=FALSE}
+dcmp1<-serie1%>%model(stl=STL(SO2))
+dcmp2<-serie2%>%model(stl=STL(SO2))
+
+theme_clean <- theme(
+  plot.title = element_blank(),     
+  plot.subtitle = element_blank(),  
+  strip.text.y = element_text(size = 8) 
+)
+
+p3_styled <- components(dcmp1) %>%
+  autoplot() + 
+  theme_clean
+
+p4_styled <- components(dcmp2) %>%
+  autoplot() + 
+  theme_clean
+
+(p3_styled | p4_styled) +
+  plot_annotation(
+    title = 'Comparación de Descomposición STL (SO2)',
+    subtitle = 'Serie 1 (Belisario) vs\nSerie 2 (Carapungo)' 
+  ) +
+  plot_layout(widths = c(1, 1), guides = 'collect')
+```
+
+### Estacionaridad
+
+#### ACF
+
+```{r, echo=FALSE}
+
+g3<-serie1%>%fill_gaps()%>%ACF(SO2, lag_max = 200)%>%autoplot()+labs(title = "Cantidad de SO2 en Belisario")
+
+g4<-serie2%>%fill_gaps()%>%ACF(SO2, lag_max = 200)%>%autoplot()+labs(title = "Cantidad de SO2 en Carapungo")
+
+g3/g4
+```
+
+Los gráficos de la AFC, muestran que existe auto-correlación con lags pasados. Como por ejemplo el caso de Belisario, posee una alta auto-correlación hasta un lag cercano a 200, a diferencia de la cantidad de SO2 en Carapungo, que muestra una correlación más fuerte con los lag cercanos a 3.
+
+Podemos ver en la siguiente tabla de valores del ACF para las dos series.
+
+```{r, echo=FALSE, warning=FALSE}
+t1<-serie1%>%fill_gaps()%>%ACF(SO2, lag_max = 200)
+t2<-serie2%>%fill_gaps()%>%ACF(SO2, lag_max = 200)
+
+t1_resumen <- t1 %>% 
+  arrange(desc(abs(acf))) %>% 
+  head(5)
+
+t2_resumen <- t2 %>% 
+  arrange(desc(abs(acf))) %>% 
+  head(5)
+
+
+library(gt)
+library(htmltools)
+
+# Tabla 1
+gt_t1 <- gt(as_tibble(t1_resumen)) %>%
+  tab_header(title = "SO2 en Belisario") %>%
+  fmt_number(columns = acf, decimals = 4)
+
+# Tabla 2
+gt_t2 <- gt(as_tibble(t2_resumen)) %>%
+  tab_header(title = "SO2 en Carapungo") %>%
+  fmt_number(columns = acf, decimals = 4)
+
+div(
+  style = "display: flex; justify-content: space-around; gap: 20px;",
+  as.tags(gt_t1),
+  as.tags(gt_t2)
+)
+```
+
+Pero, es posible obtener un mejor acercamiento a la dependencia de la serie con los LAGS, pero primero se debe verificar si las series son Estacionarias o sino convertirlas con alguna transformación.
+
+###### Método del ROLLMEAN
+
+```{r, echo=FALSE, warning=FALSE}
+SO2mm1<- serie1%>%mutate(mm1=rollmean(SO2, k=5, fill = NA))
+SO2mm1%>%autoplot(SO2)+geom_line(aes(y=mm1), colour="#D55E00")+
+  labs(y = "SO2 HG/m^3",
+       title = "Cantidad de SO2 en Belisario y la media puntual a lo largo del tiempo") +
+  guides(colour = guide_legend(title = "series"))
+```
+
+```{r, echo=FALSE, warning=FALSE}
+SO2mm2<- serie2%>%mutate(mm2=rollmean(SO2, k=5, fill = NA))
+SO2mm2%>%autoplot(SO2)+geom_line(aes(y=mm2), colour="#D55E00")+
+  labs(y = "SO2 HG/m^3",
+       title = "Cantidad de SO2 en Carapungo y la media puntual a lo largo del tiempo") +
+  guides(colour = guide_legend(title = "series"))
+
+```
+
+A simple vista, parecen ser ambas series no estacionarias, pues, en los años del 2005 al 2006, las medias presentan picos muy altos, además que existe también una homocedasticidad.
+
+Probemos el Test de KPSS para determinar si son o no estacionarias:
+
+```{r, echo=FALSE}
+test1<-serie1%>%features(SO2, unitroot_kpss)
+test2<-serie2%>%features(SO2, unitroot_kpss)
+tabla<-bind_rows("Belisario test1"=as_tibble(test1), "Carapungo test2"=as_tibble(test2), .id = "Fuente")
+tabla %>%
+  kable(
+    caption = "Resultados de la Prueba KPSS para las series en Belisario y Carapungo", 
+    col.names = c("Fuente", "Estadístico", "Valor P"),       
+    digits = 4                                    )
+```
+
+En ambos casos, por el test KPSS, se rechaza la idea que ambas series sean estacionarias pues, el *p-value* es menor o igual a 0.01.
+
+Entonces para ver realmente alguna dependencia de las series con algún LAG, por medio del PACF (además de luego poder aplicar métodos de modelado) , necesitamos que las series sean estacionarias. La forma más sencilla podría ser una simple diferenciación de orden m, para ellos KPSS, otorga el orden de diferenciación
+
+```{r, echo=FALSE}
+m1<-serie1%>%features(SO2, unitroot_ndiffs)
+m2<-serie2%>%features(SO2, unitroot_ndiffs)
+vm1<-m1$ndiffs
+vm2<-m2$ndiffs
+df_ordenes <- data.frame(
+  Serie = c("Serie 1 (SO2)", "Serie 2 (SO2)"),
+  Orden_Requerido = c(vm1, vm2)
+)
+df_ordenes %>%
+  kable(
+    caption = "**Órdenes de Diferenciación Requeridas (ndiffs)**",
+    col.names = c("Serie", "Orden (d)"),
+    digits = 0
+  )
+```
+
+Entonces basta con la diferencia de orden 1, para que nuestras series temporales sean Estacionarias:
+
+```{r, echo=FALSE, warning=FALSE}
+serie1_diff<-serie1%>%mutate(SO2_diff=difference(SO2))%>%fill_gaps()
+
+autoplot(serie1_diff, SO2_diff)+
+  labs(y = "SO2 HG/m^3",
+       title = "Serie diferenciada: \n Cantidad de SO2 en Belisario\n") +
+  guides(colour = guide_legend(title = "series"))
+```
+
+```{r, echo=FALSE, warning=FALSE}
+serie2_diff<-serie2%>%mutate(SO2_diff=difference(SO2))%>%fill_gaps()
+
+autoplot(serie2_diff, SO2_diff)+
+  labs(y = "SO2 HG/m^3",
+       title = "Serie diferenciada: \n Cantidad de SO2 en Carapungo\n") +
+  guides(colour = guide_legend(title = "series"))
+
+```
+
+Ahora, con nuestras series transformadas a series estacionarias, la información del PACF será de interés.
+
+#### PACF
+
+```{r}
+g5<-serie1_diff%>%PACF(SO2_diff)%>%autoplot()+labs(title = "PACF de Serie Belisario (Diferenciada)")+coord_cartesian(xlim = c(0, 10))
+g6<-serie2_diff%>%PACF(SO2_diff)%>%autoplot()+labs(title = "PACF de Serie Carapungo (Diferenciada)")+coord_cartesian(xlim = c(0, 10))
+
+g5/g6
+```
+
+Por tanto, veamos los valores de la auto-correlación parcial con los distintos lags
+
+```{r , echo=FALSE}
+t3<-serie1_diff%>%fill_gaps()%>%PACF(SO2, lag_max = 200)
+t4<-serie2_diff%>%fill_gaps()%>%PACF(SO2, lag_max = 200)
+
+t3_resumen <- t3 %>% 
+  arrange(desc(abs(pacf))) %>% 
+  head(5)
+
+t4_resumen <- t4 %>% 
+  arrange(desc(abs(pacf))) %>% 
+  head(5)
+
+
+library(gt)
+library(htmltools)
+
+# Tabla 1
+gt_t3 <- gt(as_tibble(t3_resumen)) %>%
+  tab_header(title = "SO2 en Belisario") %>%
+  fmt_number(columns = pacf, decimals = 4)
+
+# Tabla 2
+gt_t4 <- gt(as_tibble(t4_resumen)) %>%
+  tab_header(title = "SO2 en Carapungo") %>%
+  fmt_number(columns = pacf, decimals = 4)
+
+div(
+  style = "display: flex; justify-content: space-around; gap: 20px;",
+  as.tags(gt_t3),
+  as.tags(gt_t4)
+)
+
+```
+
+Notamos entonces que existe una auto-correlación parcial significativa con el lag 1.
+
+***Gracias a todo lo visto antes, el modelo se podría explicar como un AR(1)***
+
+```{r, echo=FALSE, warning=FALSE}
+resultado_vertical <- serie1 %>%
+  features(SO2, feat_acf) %>%
+  pivot_longer(
+    cols = everything(),
+    names_to = "Metrica",
+    values_to = "Valor"
+  )
+
+resultado_vertical %>%
+  gt() %>% 
+  tab_header(
+    title = "Características de Autocorrelación (ACF) para la Cantidad de SO2 en Belisario", 
+    subtitle = "Resumen de feat_acf en formato vertical"
+  ) %>%
+  cols_label(
+    Metrica = "Métrica de ACF",
+    Valor = "Valor Calculado"
+  )
+```
+
+```{r, echo=FALSE, warning=FALSE}
+resultado_vertical <- serie2 %>%
+  features(SO2, feat_acf) %>%
+  pivot_longer(
+    cols = everything(),
+    names_to = "Metrica",
+    values_to = "Valor"
+  )
+
+resultado_vertical %>%
+  gt() %>% 
+  tab_header(
+    title = "Características de Autocorrelación (ACF) para la Cantidad de SO2 en Carapungo", 
+    subtitle = "Resumen de feat_acf en formato vertical"
+  ) %>%
+  cols_label(
+    Metrica = "Métrica de ACF",
+    Valor = "Valor Calculado"
+  )
+
+```
+
+Por las últimas tablas, podemos intuír que por el valor de *diff_acf1* basta con una diferencia de orden 1 para convertir ambas series en series estacionarias.
+
+```{r, echo=FALSE}
+serie1_diff<-serie1%>%mutate(SO2_diff=difference(SO2))
+
+SO2diffmm1<- serie1_diff%>%mutate(mm1_diff=rollmean(SO2, k=5, fill = NA))
+SO2diffmm1%>%autoplot(SO2_diff)+geom_line(aes(y=mm1_diff), colour="#D55E00")+
+  labs(y = "SO2 HG/m^3",
+       title = "Cantidad de SO2 en Belisario y la media puntual a lo largo del tiempo") +
+  guides(colour = guide_legend(title = "series"))
+
+
+```
+
+## Quarto
+
+Quarto enables you to weave together content and executable code into a finished document. To learn more about Quarto see <https://quarto.org>.
+
+## Running Code
+
+When you click the **Render** button a document will be generated that includes both content and the output of embedded code. You can embed code like this:
+
+```{r}
+1 + 1
+```
+
+You can add options to executable code like this
+
+```{r}
+#| echo: false
+2 * 2
+```
+
+The `echo: false` option disables the printing of code (only output is displayed).
