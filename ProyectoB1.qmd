@@ -23,44 +23,51 @@ library(stringr)
 library(patchwork)
 library(feasts)
 library(knitr)
-ruta<-"D:\\POLI\\Octavo semestres\\Series temporales\\Proyecto primer bimestre\\maate_concentracionso2_2021diciembre.csv"
+
+ruta<-"C:/Users/USER/OneDrive/Documentos/Trabajos R/10194650/so2_procesado.csv"
 ```
 
 ```{r, echo=FALSE}
-datos<-read.csv(ruta)
-datos<-datos%>%mutate(FECHA=dmy(paste(DIA, MES, ANIO)))%>%select(-DIA, -MES, -ANIO, -ANIO_REPORT,-CODMES)
+datos_so2 <- read.csv(ruta, sep = ";")
+head(datos_so2)
+datos_so2 <- datos_so2 |>  mutate(FECHA=dmy(paste(DIA, MES, ANIO)))
 
-datos<- datos%>%select(FECHA, everything())
-
-# prueba
+so2_diario <- datos_so2 |> 
+  mutate(SO2 = as.numeric(SO2)) 
 ```
 
 Tomaremos como nuestro índice temporal a la variable *FECHA.*
 
-Ahora, el estudio se realizará en la provincia de Pichincha, entonces, las series temporales consideradas se basarán en cada estación de cada cantón de la ciudad de Quito. Como primera instancia, se realizará un análisis de características de dos estaciones de interés; Belisario y Carapungo, pues, ambas en teoría muestran un gran contraste en la tipología de exposición y las fuentes de emisión, considerando que Carapungo se enfrenta diariamente a una exposición y emisión alta de SO2 por la presencia de actividades humanas por medio de la vía PANAMERICANA NORTE.
+Ahora, el estudio se realizará en la provincia de Pichincha, entonces, las series temporales consideradas se basarán en cada estación de cada cantón de la ciudad de Quito. Como primera instancia, se realizará un análisis de características de seis estaciones de interés; a saber, Belisario, Carapungo, Cotocollao, Tumbaco, (las dos que faltan). En conjunto, estas estaciones muestran un gran contraste en la tipología de exposición y las fuentes de emisión, puesto que algunas de ellas enfrentan diariamente una exposición y emisión alta de SO2 por la presencia de actividades humanas a comparación de otras.
 
-```{r, echo=FALSE}
-serie <- function(data, estacion_nombre) {
-  data %>%
-    select(FECHA, PROV, ESTACION, SO2) %>%
-    filter(PROV == "Pichincha", ESTACION == estacion_nombre) %>%
-    mutate(SO2_Numerico = as.numeric(str_replace_all(SO2, ",", "."))) %>%
-    drop_na(SO2_Numerico) %>%
-    select(FECHA, SO2 = SO2_Numerico) %>%
-    mutate(FECHA = as.Date(FECHA)) %>%
-    
-    as_tsibble(index = FECHA, key = NULL) %>%
-    
+```{r warning=FALSE, include=FALSE}
+vector_estaciones <- c("Belisario", "Carapungo", "Cotocollao", "Tumbaco")
 
-    fill_gaps(SO2 = NA) %>% 
-    mutate(SO2 = imputeTS::na_seadec(SO2, algorithm = "interpolation"))
-}
+so2_ts <- so2_diario |> 
+    filter(!is.na(SO2)) |> 
+    filter(PROV == "Pichincha", ESTACION %in% vector_estaciones) |> 
+    select(FECHA, ESTACION, SO2) |> 
+    as_tsibble(index = FECHA, key = ESTACION) |> 
+    fill_gaps() |> 
+    mutate(SO2 = imputeTS::na_seadec(SO2, algorithm = "interpolation", 
+                                     find_frequency = TRUE))
 
 ```
 
-```{r, include=FALSE, warning=FALSE}
-serie1 <- serie(datos, "Belisario")
-serie2 <- serie(datos, "Carapungo")
+```{r, echo=FALSE}
+serie_estaciones <- function(so2_diario, vector_estaciones) {
+  
+  so2_por_estaciones <- list()
+  for(i in 1:length(vector_estaciones)){
+    so2_por_estaciones[[i]] <- so2_ts |> 
+      filter(ESTACION == vector_estaciones[i])
+  }
+  
+  so2_por_estaciones
+}
+
+serie <- serie_estaciones(so2_diario, vector_estaciones)
+
 ```
 
 Con la frecuencia diaria, pues, el SO2 al ser una sustancia muy volatil, es de interés saber los días que se alcanzan los máximos durante el año. Además que el SO2 suele estar ligado a la actividad humana, entonces, la medición diaria del SO2 tiene la capacidad de mostrar patrones cruciales. (REFERENCIA)
@@ -70,21 +77,24 @@ Con la frecuencia diaria, pues, el SO2 al ser una sustancia muy volatil, es de i
 #### Tendencia
 
 ```{r, echo=FALSE}
-p1<-serie1%>%autoplot(SO2)+labs(title = "Estación Belisario", x="Tiempo")
-p2<-serie2%>%autoplot(SO2)+labs(title = "Estación Carapungo", x="Tiempo")
 
-p1/p2 #patchwork
+so2_ts |> 
+  autoplot(SO2) +
+  labs(title = "Estaciones", x="Tiempo") +
+  facet_wrap(vars(ESTACION), scales = "free_y", ncol = 2) +
+  theme(legend.position = "none")
+
 ```
 
 #### Estacionalidad
 
 ```{r, echo=FALSE, warning=FALSE}
-g1<-serie1%>%fill_gaps()%>%gg_season(SO2, labels="both")+coord_cartesian(ylim = c(0, 40))+
-  labs(y="SO2 HG/m^3",title = "Cantidad de SO2 en el aire de Belisario")
-g2<-serie2%>%fill_gaps()%>%gg_season(SO2, labels="both")+coord_cartesian(ylim = c(0, 40))+
-  labs(y="SO2 HG/m^3",title = "Cantidad de SO2 en el aire de Carapungo")
 
-g1/g2 
+so2_ts |> 
+  gg_season(SO2, labels="both") +
+  labs(y="SO2 HG/m^3", x = "Tiempo",
+       title = "Cantidad de SO2 en el aire por estaciones")
+
 ```
 
 En el gráfico anterior se muestra que los primeros y últimos días de cada año, se da un efecto descendiente del SO2 en el aire, un patrón que como se explicó, se lo localiza por una frecuencia diaria.
@@ -94,29 +104,11 @@ En el gráfico anterior se muestra que los primeros y últimos días de cada añ
 El siguiente objetivo es ver el comportamiento de cada componente de la descomposición de ambas series.
 
 ```{r, echo=FALSE}
-dcmp1<-serie1%>%model(stl=STL(SO2))
-dcmp2<-serie2%>%model(stl=STL(SO2))
-
-theme_clean <- theme(
-  plot.title = element_blank(),     
-  plot.subtitle = element_blank(),  
-  strip.text.y = element_text(size = 8) 
-)
-
-p3_styled <- components(dcmp1) %>%
-  autoplot() + 
-  theme_clean
-
-p4_styled <- components(dcmp2) %>%
-  autoplot() + 
-  theme_clean
-
-(p3_styled | p4_styled) +
-  plot_annotation(
-    title = 'Comparación de Descomposición STL (SO2)',
-    subtitle = 'Serie 1 (Belisario) vs\nSerie 2 (Carapungo)' 
-  ) +
-  plot_layout(widths = c(1, 1), guides = 'collect')
+so2_ts |> 
+  model(stl=STL(SO2)) |> 
+  components() |> 
+  autoplot() +
+  labs(title = "Descomposición STL", x="Tiempo")
 ```
 
 ### Estacionaridad
@@ -125,14 +117,16 @@ p4_styled <- components(dcmp2) %>%
 
 ```{r, echo=FALSE}
 
-g3<-serie1%>%fill_gaps()%>%ACF(SO2, lag_max = 200)%>%autoplot()+labs(title = "Cantidad de SO2 en Belisario")
+so2_ts |> 
+  ACF(SO2, lag_max = 200) |> 
+  autoplot() + 
+  labs(title = "ACF de cantidad de SO2 por estación") +
+  facet_wrap(vars(ESTACION), scales = "free_y", ncol = 2) +
+  theme(legend.position = "none")
 
-g4<-serie2%>%fill_gaps()%>%ACF(SO2, lag_max = 200)%>%autoplot()+labs(title = "Cantidad de SO2 en Carapungo")
-
-g3/g4
 ```
 
-Los gráficos de la AFC, muestran que existe auto-correlación con lags pasados. Como por ejemplo el caso de Belisario, posee una alta auto-correlación hasta un lag cercano a 200, a diferencia de la cantidad de SO2 en Carapungo, que muestra una correlación más fuerte con los lag cercanos a 3.
+(MODIFICAR) Los gráficos de la ACF, muestran que existe auto-correlación con lags pasados. Como por ejemplo el caso de Belisario, posee una alta auto-correlación hasta un lag cercano a 200, a diferencia de la cantidad de SO2 en Carapungo, que muestra una correlación más fuerte con los lag cercanos a 3.
 
 Podemos ver en la siguiente tabla de valores del ACF para las dos series.
 
@@ -174,20 +168,15 @@ Pero, es posible obtener un mejor acercamiento a la dependencia de la serie con 
 ###### Método del ROLLMEAN
 
 ```{r, echo=FALSE, warning=FALSE}
-SO2mm1<- serie1%>%mutate(mm1=rollmean(SO2, k=5, fill = NA))
-SO2mm1%>%autoplot(SO2)+geom_line(aes(y=mm1), colour="#D55E00")+
-  labs(y = "SO2 HG/m^3",
-       title = "Cantidad de SO2 en Belisario y la media puntual a lo largo del tiempo") +
-  guides(colour = guide_legend(title = "series"))
-```
-
-```{r, echo=FALSE, warning=FALSE}
-SO2mm2<- serie2%>%mutate(mm2=rollmean(SO2, k=5, fill = NA))
-SO2mm2%>%autoplot(SO2)+geom_line(aes(y=mm2), colour="#D55E00")+
-  labs(y = "SO2 HG/m^3",
-       title = "Cantidad de SO2 en Carapungo y la media puntual a lo largo del tiempo") +
-  guides(colour = guide_legend(title = "series"))
-
+so2_ts |> 
+  mutate(mm=rollmean(SO2, k=5, fill = NA)) |> 
+  autoplot(SO2) + 
+  geom_line(aes(y=mm), colour="#D55E00") +
+  labs(title = "Cantidad de SO2 por estación y la media puntual a lo largo del tiempo") +
+  facet_wrap(vars(ESTACION), scales = "free_y", ncol = 2) +
+  theme(legend.position = "none") +
+  guides(color = "none") +
+  scale_color_manual(values = rep("black", length(vector_estaciones)))
 ```
 
 A simple vista, parecen ser ambas series no estacionarias, pues, en los años del 2005 al 2006, las medias presentan picos muy altos, además que existe también una homocedasticidad.
@@ -229,22 +218,12 @@ df_ordenes %>%
 Entonces basta con la diferencia de orden 1, para que nuestras series temporales sean Estacionarias:
 
 ```{r, echo=FALSE, warning=FALSE}
-serie1_diff<-serie1%>%mutate(SO2_diff=difference(SO2))%>%fill_gaps()
-
-autoplot(serie1_diff, SO2_diff)+
-  labs(y = "SO2 HG/m^3",
-       title = "Serie diferenciada: \n Cantidad de SO2 en Belisario\n") +
-  guides(colour = guide_legend(title = "series"))
-```
-
-```{r, echo=FALSE, warning=FALSE}
-serie2_diff<-serie2%>%mutate(SO2_diff=difference(SO2))%>%fill_gaps()
-
-autoplot(serie2_diff, SO2_diff)+
-  labs(y = "SO2 HG/m^3",
-       title = "Serie diferenciada: \n Cantidad de SO2 en Carapungo\n") +
-  guides(colour = guide_legend(title = "series"))
-
+so2_ts |> 
+  mutate(SO2_diff=difference(SO2)) |> 
+  autoplot(SO2_diff) + 
+  labs(title = "Serie diferenciada: \n Cantidad de SO2 por estación") +
+  facet_wrap(vars(ESTACION), scales = "free_y", ncol = 2) +
+  theme(legend.position = "none")
 ```
 
 Ahora, con nuestras series transformadas a series estacionarias, la información del PACF será de interés.
@@ -252,10 +231,13 @@ Ahora, con nuestras series transformadas a series estacionarias, la información
 #### PACF
 
 ```{r}
-g5<-serie1_diff%>%PACF(SO2_diff)%>%autoplot()+labs(title = "PACF de Serie Belisario (Diferenciada)")+coord_cartesian(xlim = c(0, 10))
-g6<-serie2_diff%>%PACF(SO2_diff)%>%autoplot()+labs(title = "PACF de Serie Carapungo (Diferenciada)")+coord_cartesian(xlim = c(0, 10))
+so2_ts |> 
+  PACF(SO2) |> 
+  autoplot() + 
+  labs(title = "ACF de cantidad de SO2 por estación") +
+  facet_wrap(vars(ESTACION), scales = "free_y", ncol = 2) +
+  theme(legend.position = "none")
 
-g5/g6
 ```
 
 Por tanto, veamos los valores de la auto-correlación parcial con los distintos lags
