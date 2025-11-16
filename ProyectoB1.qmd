@@ -34,7 +34,7 @@ datos_so2 <- datos_so2 |>  mutate(FECHA=dmy(paste(DIA, MES, ANIO)))
 
 so2_diario <- datos_so2 |> 
   mutate(SO2 = as.numeric(SO2)) 
-#prueba
+
 ```
 
 Tomaremos como nuestro índice temporal a la variable *FECHA.*
@@ -44,7 +44,7 @@ Ahora, el estudio se realizará en la provincia de Pichincha, entonces, las seri
 Borrar 2
 
 ```{r warning=FALSE, include=FALSE}
-vector_estaciones <- c("Belisario", "Carapungo", "Cotocollao", "Tumbaco")
+vector_estaciones <- c("Belisario", "Carapungo", "Cotocollao", "Tumbaco","Los Chillos","Guamani")
 
 so2_ts <- so2_diario |> 
     filter(!is.na(SO2)) |> 
@@ -347,7 +347,5 @@ La serie de Carapungo Diferenciada, cumple que:
 -   Hay un pico significativo en el las p=1, pero nínguno más allá del lag p, sin considerar la estacionalidad de cada semana
 
 Por tanto, se puede decir que los datos para Belisario y Carapungo siguen un ARIMA(p,d,0), pero por la estacionalidad de los datos, que hace sentido que pasando 7 días, se repita el comportamiento, el mejor modelo que podría ajustarse sea SARIMA
-
-
 
 borrar111
