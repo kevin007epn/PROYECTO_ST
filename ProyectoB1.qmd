@@ -4,7 +4,7 @@ format: html
 editor: visual
 ---
 
-# Series Temporales: Proyecto B1 dfdf
+# Series Temporales: Proyecto B1
 
 ```{r, echo=FALSE, include=FALSE}
 #Librerías
@@ -24,24 +24,27 @@ library(patchwork)
 library(feasts)
 library(knitr)
 
-ruta<-"C:/Users/USER/OneDrive/Documentos/Trabajos R/10194650/so2_procesado.csv"
+ruta<-"D:\\POLI\\Octavo semestres\\Series temporales\\Proyecto primer bimestre\\maate_concentracionso2_2021diciembre.csv"
 ```
 
 ```{r, echo=FALSE}
-datos_so2 <- read.csv(ruta, sep = ";")
+datos_so2 <- read.csv(ruta)
 head(datos_so2)
 datos_so2 <- datos_so2 |>  mutate(FECHA=dmy(paste(DIA, MES, ANIO)))
 
 so2_diario <- datos_so2 |> 
   mutate(SO2 = as.numeric(SO2)) 
+#prueba
 ```
 
 Tomaremos como nuestro índice temporal a la variable *FECHA.*
 
 Ahora, el estudio se realizará en la provincia de Pichincha, entonces, las series temporales consideradas se basarán en cada estación de cada cantón de la ciudad de Quito. Como primera instancia, se realizará un análisis de características de seis estaciones de interés; a saber, Belisario, Carapungo, Cotocollao, Tumbaco, (las dos que faltan). En conjunto, estas estaciones muestran un gran contraste en la tipología de exposición y las fuentes de emisión, puesto que algunas de ellas enfrentan diariamente una exposición y emisión alta de SO2 por la presencia de actividades humanas a comparación de otras.
 
+Borrar 2
+
 ```{r warning=FALSE, include=FALSE}
-vector_estaciones <- c("Belisario", "Carapungo", "Cotocollao", "Tumbaco","Los Chillos", "Guamani")
+vector_estaciones <- c("Belisario", "Carapungo", "Cotocollao", "Tumbaco")
 
 so2_ts <- so2_diario |> 
     filter(!is.na(SO2)) |> 
@@ -111,9 +114,9 @@ so2_ts |>
   labs(title = "Descomposición STL", x="Tiempo")
 ```
 
-### Estacionaridad
+#### Estacionaridad
 
-#### ACF
+##### ACF
 
 ```{r, echo=FALSE}
 
@@ -131,35 +134,43 @@ so2_ts |>
 Podemos ver en la siguiente tabla de valores del ACF para las dos series.
 
 ```{r, echo=FALSE, warning=FALSE}
-t1<-serie1%>%fill_gaps()%>%ACF(SO2, lag_max = 200)
-t2<-serie2%>%fill_gaps()%>%ACF(SO2, lag_max = 200)
-
-t1_resumen <- t1 %>% 
-  arrange(desc(abs(acf))) %>% 
-  head(5)
-
-t2_resumen <- t2 %>% 
-  arrange(desc(abs(acf))) %>% 
-  head(5)
-
-
 library(gt)
 library(htmltools)
 
-# Tabla 1
-gt_t1 <- gt(as_tibble(t1_resumen)) %>%
-  tab_header(title = "SO2 en Belisario") %>%
-  fmt_number(columns = acf, decimals = 4)
+acf_resultados_completos <- so2_ts |> 
+  ACF(SO2, lag_max = 200) |> 
+  as_tibble()
 
-# Tabla 2
-gt_t2 <- gt(as_tibble(t2_resumen)) %>%
-  tab_header(title = "SO2 en Carapungo") %>%
-  fmt_number(columns = acf, decimals = 4)
+crear_tabla_gt_acf <- function(nombre_estacion) {
+  resumen_estacion <- acf_resultados_completos |>
+    filter(ESTACION == nombre_estacion) |>
+    arrange(desc(abs(acf))) |>
+    slice_head(n = 5) |> 
+    select(Lag = lag, ACF = acf)
+  gt(resumen_estacion) |>
+    tab_header(
+      title = paste("SO2 en", nombre_estacion)
+    ) |>
+    fmt_number(
+      columns = ACF, 
+      decimals = 4
+    ) |>
+    tab_options(
+      table.font.size = "small",
+      heading.title.font.size = "medium"
+    )
+}
+lista_de_tablas_gt <- lapply(vector_estaciones, crear_tabla_gt_acf)
+
+
+lista_de_tablas_html <- lapply(lista_de_tablas_gt, as.tags)
 
 div(
-  style = "display: flex; justify-content: space-around; gap: 20px;",
-  as.tags(gt_t1),
-  as.tags(gt_t2)
+  style = "display: grid; grid-template-columns: 1fr 1fr; gap: 20px;",
+  lista_de_tablas_html[[1]], # Belisario
+  lista_de_tablas_html[[2]], # Carapungo
+  lista_de_tablas_html[[3]], # Cotocollao
+  lista_de_tablas_html[[4]]  # Tumbaco
 )
 ```
 
@@ -184,35 +195,38 @@ A simple vista, parecen ser ambas series no estacionarias, pues, en los años de
 Probemos el Test de KPSS para determinar si son o no estacionarias:
 
 ```{r, echo=FALSE}
-test1<-serie1%>%features(SO2, unitroot_kpss)
-test2<-serie2%>%features(SO2, unitroot_kpss)
-tabla<-bind_rows("Belisario test1"=as_tibble(test1), "Carapungo test2"=as_tibble(test2), .id = "Fuente")
-tabla %>%
-  kable(
-    caption = "Resultados de la Prueba KPSS para las series en Belisario y Carapungo", 
-    col.names = c("Fuente", "Estadístico", "Valor P"),       
-    digits = 4                                    )
+test_kpss_todos <- so2_ts |> 
+  features(SO2, unitroot_kpss)
+tabla_kpss <- test_kpss_todos |> 
+  filter(ESTACION %in% c("Belisario", "Carapungo", "Cotocollao","Tumbaco"))
+
+kable(
+  tabla_kpss,
+  caption = "Resultados de la Prueba KPSS", 
+  col.names = c("Fuente", "Estadístico", "Valor P"),
+  digits = 4
+)                                 
 ```
 
-En ambos casos, por el test KPSS, se rechaza la idea que ambas series sean estacionarias pues, el *p-value* es menor o igual a 0.01.
+En todos los casos, por el test KPSS, se rechaza la idea que las series sean estacionarias pues, el *p-value* es menor o igual a 0.01.
 
 Entonces para ver realmente alguna dependencia de las series con algún LAG, por medio del PACF (además de luego poder aplicar métodos de modelado) , necesitamos que las series sean estacionarias. La forma más sencilla podría ser una simple diferenciación de orden m, para ellos KPSS, otorga el orden de diferenciación
 
 ```{r, echo=FALSE}
-m1<-serie1%>%features(SO2, unitroot_ndiffs)
-m2<-serie2%>%features(SO2, unitroot_ndiffs)
-vm1<-m1$ndiffs
-vm2<-m2$ndiffs
-df_ordenes <- data.frame(
-  Serie = c("Serie 1 (SO2)", "Serie 2 (SO2)"),
-  Orden_Requerido = c(vm1, vm2)
+
+ordenes_diff <- so2_ts |> 
+  features(SO2, unitroot_ndiffs)
+
+tabla_ordenes <- ordenes_diff |> 
+  filter(ESTACION %in% c("Belisario", "Carapungo", "Cotocollao","Tumbaco"))
+
+
+kable(
+  tabla_ordenes,
+  caption = "**Órdenes de Diferenciación Requeridas (ndiffs)**",
+  col.names = c("Serie", "Orden (d)"), 
+  digits = 0
 )
-df_ordenes %>%
-  kable(
-    caption = "**Órdenes de Diferenciación Requeridas (ndiffs)**",
-    col.names = c("Serie", "Orden (d)"),
-    digits = 0
-  )
 ```
 
 Entonces basta con la diferencia de orden 1, para que nuestras series temporales sean Estacionarias:
@@ -228,9 +242,9 @@ so2_ts |>
 
 Ahora, con nuestras series transformadas a series estacionarias, la información del PACF será de interés.
 
-#### PACF
+##### PACF
 
-```{r}
+```{r, echo=FALSE}
 so2_ts |> 
   PACF(SO2) |> 
   autoplot() + 
@@ -243,35 +257,43 @@ so2_ts |>
 Por tanto, veamos los valores de la auto-correlación parcial con los distintos lags
 
 ```{r , echo=FALSE}
-t3<-serie1_diff%>%fill_gaps()%>%PACF(SO2, lag_max = 200)
-t4<-serie2_diff%>%fill_gaps()%>%PACF(SO2, lag_max = 200)
-
-t3_resumen <- t3 %>% 
-  arrange(desc(abs(pacf))) %>% 
-  head(5)
-
-t4_resumen <- t4 %>% 
-  arrange(desc(abs(pacf))) %>% 
-  head(5)
-
-
 library(gt)
 library(htmltools)
+pacf_resultados <- so2_ts |>
+  PACF(SO2, lag_max = 200) |>
+  as_tibble()
+crear_tabla_gt_pacf <- function(nombre_estacion) {
 
-# Tabla 1
-gt_t3 <- gt(as_tibble(t3_resumen)) %>%
-  tab_header(title = "SO2 en Belisario") %>%
-  fmt_number(columns = pacf, decimals = 4)
+  resumen_estacion <- pacf_resultados |>
+    filter(ESTACION == nombre_estacion) |>
+    arrange(desc(abs(pacf))) |>
+    slice_head(n = 5) |> 
+    select(Lag = lag, PACF = pacf) 
+  gt(resumen_estacion) |>
+    tab_header(
+      title = paste("SO2 en", nombre_estacion) 
+    ) |>
+    fmt_number(
+      columns = PACF, 
+      decimals = 4
+    ) |>
+    tab_options(
+      table.font.size = "small",
+      heading.title.font.size = "medium"
+    )
+}
 
-# Tabla 2
-gt_t4 <- gt(as_tibble(t4_resumen)) %>%
-  tab_header(title = "SO2 en Carapungo") %>%
-  fmt_number(columns = pacf, decimals = 4)
+lista_de_tablas_gt_pacf <- lapply(vector_estaciones, crear_tabla_gt_pacf)
+
+lista_de_tablas_html_pacf <- lapply(lista_de_tablas_gt_pacf, as.tags)
+
 
 div(
-  style = "display: flex; justify-content: space-around; gap: 20px;",
-  as.tags(gt_t3),
-  as.tags(gt_t4)
+  style = "display: grid; grid-template-columns: 1fr 1fr; gap: 20px;",
+  lista_de_tablas_html_pacf[[1]], # Belisario
+  lista_de_tablas_html_pacf[[2]], # Carapungo
+  lista_de_tablas_html_pacf[[3]], # Cotocollao
+  lista_de_tablas_html_pacf[[4]]  # Tumbaco
 )
 
 ```
@@ -280,80 +302,52 @@ Notamos entonces que existe una auto-correlación parcial significativa con el l
 
 ***Gracias a todo lo visto antes, el modelo se podría explicar como un AR(1)***
 
-```{r, echo=FALSE, warning=FALSE}
-resultado_vertical <- serie1 %>%
-  features(SO2, feat_acf) %>%
-  pivot_longer(
-    cols = everything(),
-    names_to = "Metrica",
-    values_to = "Valor"
-  )
+#### División de los datos
 
-resultado_vertical %>%
-  gt() %>% 
-  tab_header(
-    title = "Características de Autocorrelación (ACF) para la Cantidad de SO2 en Belisario", 
-    subtitle = "Resumen de feat_acf en formato vertical"
-  ) %>%
-  cols_label(
-    Metrica = "Métrica de ACF",
-    Valor = "Valor Calculado"
-  )
+**Serie Belisario**
+
+```{r}
+s1d_e<-serie1_diff%>%slice_head(prop = 0.8)
+s1d_p<-serie1_diff%>%slice_head(prop = 0.2)
 ```
 
-```{r, echo=FALSE, warning=FALSE}
-resultado_vertical <- serie2 %>%
-  features(SO2, feat_acf) %>%
-  pivot_longer(
-    cols = everything(),
-    names_to = "Metrica",
-    values_to = "Valor"
-  )
+**Serie Carapungo**
 
-resultado_vertical %>%
-  gt() %>% 
-  tab_header(
-    title = "Características de Autocorrelación (ACF) para la Cantidad de SO2 en Carapungo", 
-    subtitle = "Resumen de feat_acf en formato vertical"
-  ) %>%
-  cols_label(
-    Metrica = "Métrica de ACF",
-    Valor = "Valor Calculado"
-  )
-
+```{r}
+s2d_e<-serie2_diff%>%slice_head(prop = 0.8)
+s2d_p<-serie2_diff%>%slice_head(prop = 0.2)
 ```
 
-Por las últimas tablas, podemos intuír que por el valor de *diff_acf1* basta con una diferencia de orden 1 para convertir ambas series en series estacionarias.
+### Modelado
+
+Como se discutió anteriormente, el análisis de la Función de Autocorrelación Parcial (PACF) de las series diferenciadas sugirió un modelo Autorregresivo de orden 1 (AR(1)). A continuación, se realizará el análisis complementario de la **Función de Autocorrelación (ACF)** para determinar el orden del componente de Media Móvil (MA).
+
+```{r, echo=FALSE, warning=FALSE}
+g7<-serie1_diff%>%fill_gaps()%>%ACF(SO2, lag_max = 200)%>%autoplot()+labs(title = "Cantidad de SO2 en Belisario Diferenciada")
+
+g8<-serie2_diff%>%fill_gaps()%>%ACF(SO2, lag_max = 200)%>%autoplot()+labs(title = "Cantidad de SO2 en Carapungo Diferenciada")
+
+ g7/g8 
+```
 
 ```{r, echo=FALSE}
-serie1_diff<-serie1%>%mutate(SO2_diff=difference(SO2))
-
-SO2diffmm1<- serie1_diff%>%mutate(mm1_diff=rollmean(SO2, k=5, fill = NA))
-SO2diffmm1%>%autoplot(SO2_diff)+geom_line(aes(y=mm1_diff), colour="#D55E00")+
-  labs(y = "SO2 HG/m^3",
-       title = "Cantidad de SO2 en Belisario y la media puntual a lo largo del tiempo") +
-  guides(colour = guide_legend(title = "series"))
-
-
+g5/g6
 ```
 
-## Quarto
+La serie de Belisario Diferenciada, cumple que:
 
-Quarto enables you to weave together content and executable code into a finished document. To learn more about Quarto see <https://quarto.org>.
+-   el ACF decae exponencialmente
 
-## Running Code
+-   Hay un pico significativo en el las p=1, pero nínguno más allá del lag p, sin considerar la estacionalidad de cada semana
 
-When you click the **Render** button a document will be generated that includes both content and the output of embedded code. You can embed code like this:
+La serie de Carapungo Diferenciada, cumple que:
 
-```{r}
-1 + 1
-```
+-   el ACF decae exponencialmente
 
-You can add options to executable code like this
+-   Hay un pico significativo en el las p=1, pero nínguno más allá del lag p, sin considerar la estacionalidad de cada semana
 
-```{r}
-#| echo: false
-2 * 2
-```
+Por tanto, se puede decir que los datos para Belisario y Carapungo siguen un ARIMA(p,d,0), pero por la estacionalidad de los datos, que hace sentido que pasando 7 días, se repita el comportamiento, el mejor modelo que podría ajustarse sea SARIMA
 
-The `echo: false` option disables the printing of code (only output is displayed).
+
+
+borrar111
