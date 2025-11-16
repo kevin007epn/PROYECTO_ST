@@ -41,7 +41,7 @@ Tomaremos como nuestro índice temporal a la variable *FECHA.*
 Ahora, el estudio se realizará en la provincia de Pichincha, entonces, las series temporales consideradas se basarán en cada estación de cada cantón de la ciudad de Quito. Como primera instancia, se realizará un análisis de características de seis estaciones de interés; a saber, Belisario, Carapungo, Cotocollao, Tumbaco, (las dos que faltan). En conjunto, estas estaciones muestran un gran contraste en la tipología de exposición y las fuentes de emisión, puesto que algunas de ellas enfrentan diariamente una exposición y emisión alta de SO2 por la presencia de actividades humanas a comparación de otras.
 
 ```{r warning=FALSE, include=FALSE}
-vector_estaciones <- c("Belisario", "Carapungo", "Cotocollao", "Tumbaco")
+vector_estaciones <- c("Belisario", "Carapungo", "Cotocollao", "Tumbaco","Los Chillos", "Guamani")
 
 so2_ts <- so2_diario |> 
     filter(!is.na(SO2)) |> 
