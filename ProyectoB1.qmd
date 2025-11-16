@@ -24,11 +24,11 @@ library(patchwork)
 library(feasts)
 library(knitr)
 
-ruta<-"D:\\POLI\\Octavo semestres\\Series temporales\\Proyecto primer bimestre\\maate_concentracionso2_2021diciembre.csv"
+ruta<-"maate_concentracionso2_2021diciembre.csv"
 ```
 
 ```{r, echo=FALSE}
-datos_so2 <- read.csv(ruta)
+datos_so2 <- read.csv(ruta, sep = ";")
 head(datos_so2)
 datos_so2 <- datos_so2 |>  mutate(FECHA=dmy(paste(DIA, MES, ANIO)))
 
@@ -134,44 +134,38 @@ so2_ts |>
 Podemos ver en la siguiente tabla de valores del ACF para las dos series.
 
 ```{r, echo=FALSE, warning=FALSE}
+library(dplyr)
+library(tidyr)
 library(gt)
-library(htmltools)
 
 acf_resultados_completos <- so2_ts |> 
   ACF(SO2, lag_max = 200) |> 
   as_tibble()
 
-crear_tabla_gt_acf <- function(nombre_estacion) {
-  resumen_estacion <- acf_resultados_completos |>
-    filter(ESTACION == nombre_estacion) |>
-    arrange(desc(abs(acf))) |>
-    slice_head(n = 5) |> 
-    select(Lag = lag, ACF = acf)
-  gt(resumen_estacion) |>
-    tab_header(
-      title = paste("SO2 en", nombre_estacion)
-    ) |>
-    fmt_number(
-      columns = ACF, 
-      decimals = 4
-    ) |>
-    tab_options(
-      table.font.size = "small",
-      heading.title.font.size = "medium"
-    )
-}
-lista_de_tablas_gt <- lapply(vector_estaciones, crear_tabla_gt_acf)
+# Primero, preparar los datos en formato wide
+tabla_wide <- acf_resultados_completos |>
+  mutate(lag_num = as.numeric(gsub("D", "", lag))) |>
+  # Filtrar los primeros 10 lags
+  filter(lag_num <= 10) |>
+  select(-lag_num) |> 
+  # Convertir a formato wide (estaciones como filas, lags como columnas)
+  pivot_wider(
+    names_from = lag, 
+    values_from = acf
+  )
 
+# Crear la tabla GT
+tabla_ACF <- gt(tabla_wide) |>
+  tab_header(
+    title = "SO2 - Valores ACF por Lag"
+  ) |>
+  fmt_number(
+    columns = -ESTACION,  # Aplicar a todas las columnas excepto "Estación"
+    decimals = 4
+  )
 
-lista_de_tablas_html <- lapply(lista_de_tablas_gt, as.tags)
-
-div(
-  style = "display: grid; grid-template-columns: 1fr 1fr; gap: 20px;",
-  lista_de_tablas_html[[1]], # Belisario
-  lista_de_tablas_html[[2]], # Carapungo
-  lista_de_tablas_html[[3]], # Cotocollao
-  lista_de_tablas_html[[4]]  # Tumbaco
-)
+# Mostrar la tabla
+tabla_ACF
 ```
 
 Pero, es posible obtener un mejor acercamiento a la dependencia de la serie con los LAGS, pero primero se debe verificar si las series son Estacionarias o sino convertirlas con alguna transformación.
@@ -197,8 +191,9 @@ Probemos el Test de KPSS para determinar si son o no estacionarias:
 ```{r, echo=FALSE}
 test_kpss_todos <- so2_ts |> 
   features(SO2, unitroot_kpss)
+
 tabla_kpss <- test_kpss_todos |> 
-  filter(ESTACION %in% c("Belisario", "Carapungo", "Cotocollao","Tumbaco"))
+  filter(ESTACION %in% vector_estaciones)
 
 kable(
   tabla_kpss,
@@ -218,7 +213,7 @@ ordenes_diff <- so2_ts |>
   features(SO2, unitroot_ndiffs)
 
 tabla_ordenes <- ordenes_diff |> 
-  filter(ESTACION %in% c("Belisario", "Carapungo", "Cotocollao","Tumbaco"))
+  filter(ESTACION %in% vector_estaciones)
 
 
 kable(
@@ -257,44 +252,34 @@ so2_ts |>
 Por tanto, veamos los valores de la auto-correlación parcial con los distintos lags
 
 ```{r , echo=FALSE}
-library(gt)
-library(htmltools)
-pacf_resultados <- so2_ts |>
-  PACF(SO2, lag_max = 200) |>
+pacf_resultados_completos <- so2_ts |> 
+  PACF(SO2, lag_max = 200) |> 
   as_tibble()
-crear_tabla_gt_pacf <- function(nombre_estacion) {
 
-  resumen_estacion <- pacf_resultados |>
-    filter(ESTACION == nombre_estacion) |>
-    arrange(desc(abs(pacf))) |>
-    slice_head(n = 5) |> 
-    select(Lag = lag, PACF = pacf) 
-  gt(resumen_estacion) |>
-    tab_header(
-      title = paste("SO2 en", nombre_estacion) 
-    ) |>
-    fmt_number(
-      columns = PACF, 
-      decimals = 4
-    ) |>
-    tab_options(
-      table.font.size = "small",
-      heading.title.font.size = "medium"
-    )
-}
+# Primero, preparar los datos en formato wide
+tabla_wide <- pacf_resultados_completos |>
+  mutate(lag_num = as.numeric(gsub("D", "", lag))) |>
+  # Filtrar los primeros 10 lags
+  filter(lag_num <= 10) |>
+  select(-lag_num) |> 
+  # Convertir a formato wide (estaciones como filas, lags como columnas)
+  pivot_wider(
+    names_from = lag, 
+    values_from = pacf
+  )
 
-lista_de_tablas_gt_pacf <- lapply(vector_estaciones, crear_tabla_gt_pacf)
+# Crear la tabla GT
+tabla_PACF <- gt(tabla_wide) |>
+  tab_header(
+    title = "SO2 - Valores PACF por Lag"
+  ) |>
+  fmt_number(
+    columns = -ESTACION,  # Aplicar a todas las columnas excepto "Estación"
+    decimals = 4
+  )
 
-lista_de_tablas_html_pacf <- lapply(lista_de_tablas_gt_pacf, as.tags)
-
-
-div(
-  style = "display: grid; grid-template-columns: 1fr 1fr; gap: 20px;",
-  lista_de_tablas_html_pacf[[1]], # Belisario
-  lista_de_tablas_html_pacf[[2]], # Carapungo
-  lista_de_tablas_html_pacf[[3]], # Cotocollao
-  lista_de_tablas_html_pacf[[4]]  # Tumbaco
-)
+# Mostrar la tabla
+tabla_PACF
 
 ```
 
@@ -323,15 +308,15 @@ s2d_p<-serie2_diff%>%slice_head(prop = 0.2)
 Como se discutió anteriormente, el análisis de la Función de Autocorrelación Parcial (PACF) de las series diferenciadas sugirió un modelo Autorregresivo de orden 1 (AR(1)). A continuación, se realizará el análisis complementario de la **Función de Autocorrelación (ACF)** para determinar el orden del componente de Media Móvil (MA).
 
 ```{r, echo=FALSE, warning=FALSE}
-g7<-serie1_diff%>%fill_gaps()%>%ACF(SO2, lag_max = 200)%>%autoplot()+labs(title = "Cantidad de SO2 en Belisario Diferenciada")
 
-g8<-serie2_diff%>%fill_gaps()%>%ACF(SO2, lag_max = 200)%>%autoplot()+labs(title = "Cantidad de SO2 en Carapungo Diferenciada")
+so2_ts |> 
+  mutate(SO2_diff=difference(SO2)) |> 
+  ACF(SO2, lag_max = 200) |> 
+  autoplot() + 
+  labs(title = "ACF de cantidad de SO2 por estación diferenciada") +
+  facet_wrap(vars(ESTACION), scales = "free_y", ncol = 2) +
+  theme(legend.position = "none")
 
- g7/g8 
-```
-
-```{r, echo=FALSE}
-g5/g6
 ```
 
 La serie de Belisario Diferenciada, cumple que:
@@ -347,5 +332,3 @@ La serie de Carapungo Diferenciada, cumple que:
 -   Hay un pico significativo en el las p=1, pero nínguno más allá del lag p, sin considerar la estacionalidad de cada semana
 
 Por tanto, se puede decir que los datos para Belisario y Carapungo siguen un ARIMA(p,d,0), pero por la estacionalidad de los datos, que hace sentido que pasando 7 días, se repita el comportamiento, el mejor modelo que podría ajustarse sea SARIMA
-
-borrar111
