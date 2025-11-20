@@ -23,38 +23,45 @@ library(stringr)
 library(patchwork)
 library(feasts)
 library(knitr)
+library(here)
+library(astsa)
+library(stringr)
+library(lmtest)
+library(forecast)
+#install.packages("astsa",dependencies=TRUE)
+#Editar para encontrar la base de datos
 
-ruta<-"D:\\POLI\\Octavo semestres\\Series temporales\\Proyecto primer bimestre\\maate_concentracionso2_2021diciembre.csv"
+ruta<-here("maate_concentracionso2_2021diciembre.csv")
 ```
 
 ```{r, echo=FALSE}
-datos_so2 <- read.csv(ruta)
+datos_so2 <- read.csv(ruta,sep=";",dec = ",")
 head(datos_so2)
-datos_so2 <- datos_so2 |>  mutate(FECHA=dmy(paste(DIA, MES, ANIO)))
-
-so2_diario <- datos_so2 |> 
+datos_so2 <- datos_so2 |>
+  mutate(FECHA = make_date(ANIO, CODMES, DIA)) |>
+  mutate(SO2 = stringr::str_replace(SO2, ",", ".")) |> # Reemplaza , por .
   mutate(SO2 = as.numeric(SO2)) 
 
+so2_diario <- datos_so2 |> 
+  filter(!is.na(SO2))
+so2_diario
 ```
 
 Tomaremos como nuestro índice temporal a la variable *FECHA.*
 
 Ahora, el estudio se realizará en la provincia de Pichincha, entonces, las series temporales consideradas se basarán en cada estación de cada cantón de la ciudad de Quito. Como primera instancia, se realizará un análisis de características de seis estaciones de interés; a saber, Belisario, Carapungo, Cotocollao, Tumbaco, (las dos que faltan). En conjunto, estas estaciones muestran un gran contraste en la tipología de exposición y las fuentes de emisión, puesto que algunas de ellas enfrentan diariamente una exposición y emisión alta de SO2 por la presencia de actividades humanas a comparación de otras.
 
-Borrar 2
-
 ```{r warning=FALSE, include=FALSE}
 vector_estaciones <- c("Belisario", "Carapungo", "Cotocollao", "Tumbaco","Los Chillos","Guamani")
 
 so2_ts <- so2_diario |> 
-    filter(!is.na(SO2)) |> 
     filter(PROV == "Pichincha", ESTACION %in% vector_estaciones) |> 
     select(FECHA, ESTACION, SO2) |> 
     as_tsibble(index = FECHA, key = ESTACION) |> 
     fill_gaps() |> 
     mutate(SO2 = imputeTS::na_seadec(SO2, algorithm = "interpolation", 
                                      find_frequency = TRUE))
-
+so2_ts
 ```
 
 ```{r, echo=FALSE}
@@ -70,7 +77,7 @@ serie_estaciones <- function(so2_diario, vector_estaciones) {
 }
 
 serie <- serie_estaciones(so2_diario, vector_estaciones)
-
+serie
 ```
 
 Con la frecuencia diaria, pues, el SO2 al ser una sustancia muy volatil, es de interés saber los días que se alcanzan los máximos durante el año. Además que el SO2 suele estar ligado a la actividad humana, entonces, la medición diaria del SO2 tiene la capacidad de mostrar patrones cruciales. (REFERENCIA)
@@ -83,7 +90,7 @@ Con la frecuencia diaria, pues, el SO2 al ser una sustancia muy volatil, es de i
 
 so2_ts |> 
   autoplot(SO2) +
-  labs(title = "Estaciones", x="Tiempo") +
+  labs(title = "Concentración de SO2 por Estación", x = "Tiempo", y = "SO2") +
   facet_wrap(vars(ESTACION), scales = "free_y", ncol = 2) +
   theme(legend.position = "none")
 
@@ -198,7 +205,7 @@ Probemos el Test de KPSS para determinar si son o no estacionarias:
 test_kpss_todos <- so2_ts |> 
   features(SO2, unitroot_kpss)
 tabla_kpss <- test_kpss_todos |> 
-  filter(ESTACION %in% c("Belisario", "Carapungo", "Cotocollao","Tumbaco"))
+  filter(ESTACION %in% c("Belisario", "Carapungo", "Cotocollao","Tumbaco","Los Chillos", "Guamani"))
 
 kable(
   tabla_kpss,
@@ -218,7 +225,7 @@ ordenes_diff <- so2_ts |>
   features(SO2, unitroot_ndiffs)
 
 tabla_ordenes <- ordenes_diff |> 
-  filter(ESTACION %in% c("Belisario", "Carapungo", "Cotocollao","Tumbaco"))
+  filter(ESTACION %in% c("Belisario", "Carapungo", "Cotocollao","Tumbaco","Los Chillos", "Guamani"))
 
 
 kable(
@@ -248,7 +255,7 @@ Ahora, con nuestras series transformadas a series estacionarias, la información
 so2_ts |> 
   PACF(SO2) |> 
   autoplot() + 
-  labs(title = "ACF de cantidad de SO2 por estación") +
+  labs(title = "PACF de cantidad de SO2 por estación") +
   facet_wrap(vars(ESTACION), scales = "free_y", ncol = 2) +
   theme(legend.position = "none")
 
@@ -263,7 +270,6 @@ pacf_resultados <- so2_ts |>
   PACF(SO2, lag_max = 200) |>
   as_tibble()
 crear_tabla_gt_pacf <- function(nombre_estacion) {
-
   resumen_estacion <- pacf_resultados |>
     filter(ESTACION == nombre_estacion) |>
     arrange(desc(abs(pacf))) |>
@@ -300,7 +306,7 @@ div(
 
 Notamos entonces que existe una auto-correlación parcial significativa con el lag 1.
 
-***Gracias a todo lo visto antes, el modelo se podría explicar como un AR(1)***
+***####Gracias a todo lo visto antes, el modelo se podría explicar como un AR(1)***
 
 #### División de los datos
 
@@ -348,4 +354,95 @@ La serie de Carapungo Diferenciada, cumple que:
 
 Por tanto, se puede decir que los datos para Belisario y Carapungo siguen un ARIMA(p,d,0), pero por la estacionalidad de los datos, que hace sentido que pasando 7 días, se repita el comportamiento, el mejor modelo que podría ajustarse sea SARIMA
 
-borrar111
+```{r, echo=FALSE, warning=FALSE}
+#Parametros tras el analisis
+grid_params <- expand.grid(
+  p = 0:3, d = 1, q = 0:3,       # Parte no estacional
+  P = 1, D = 0, Q = 0,     # Parte estacional
+  S = 7                          # Periodo 
+)
+#Modelar y tomar los mejores 2 dado AIC
+modelado_top2 <- function(datos, est, params) {
+  resultados <- list() 
+  
+  for(i in 1:nrow(params)) {
+    fit <- try(arima(datos, 
+                     order = c(params$p[i], params$d[i], params$q[i]),
+                     seasonal = list(order = c(params$P[i], params$D[i], params$Q[i]                      ),period = params$S[i]),), 
+               silent = TRUE)
+    
+    if(!inherits(fit, "try-error")) {
+      resultados[[i]] <- tibble(
+        Estacion = est,
+        Orden = paste0("(",params$p[i],",",params$d[i],",",params$q[i],")",
+                       "(",params$P[i],",",params$D[i],",",params$Q[i],")[",params$S[i],"]"),
+        AIC = fit$aic,
+        BIC = BIC(fit) 
+      )
+    }
+  }
+  
+  
+  bind_rows(resultados) |> 
+    arrange(AIC) |> #Escoger AIC o BIC (Similar)
+    slice_head(n = 2)
+}
+
+mejores_modelos_final <- tibble() 
+estaciones <- unique(so2_ts$ESTACION)
+for(est in estaciones) {
+  serie_vec <- so2_ts |> filter(ESTACION == est) |> pull(SO2)
+  top_estacion <- modelado_top2(serie_vec, est, grid_params)
+  mejores_modelos_final <- bind_rows(mejores_modelos_final, top_estacion)
+}
+mejores_modelos_final <- mejores_modelos_final |> distinct()
+print(mejores_modelos_final)
+
+
+
+
+
+```
+
+```{r, echo=FALSE, warning=FALSE}
+
+#Estimaciones del mejor modelo de cada estacion
+ganadores <- mejores_modelos_final |>
+  group_by(Estacion) |>
+  slice_min(AIC, n = 1) |>
+  distinct(Estacion, .keep_all = TRUE) |> 
+  ungroup()
+
+
+ajustar_mle_forecast <- function(estacion, orden_str, datos_ts) {
+  
+  nums <- as.numeric(unlist(str_extract_all(orden_str, "\\d+")))
+  serie_vec <- datos_ts |> 
+    filter(ESTACION == estacion) |> 
+    pull(SO2) |> 
+    ts(frequency = 7) 
+  
+  # Ajuste del modelo forzando parámetros y MLE
+  fit <- Arima(serie_vec,
+               order = c(nums[1], nums[2], nums[3]),
+               seasonal = list(order = c(nums[4], nums[5], nums[6]), period = nums[7]),
+               include.mean = TRUE, 
+               method = "ML")
+  
+  return(list(modelo = fit, estacion = estacion, orden = orden_str))
+}
+
+resultados_mle <- list()
+
+for(i in 1:nrow(ganadores)) {
+  resultados_mle[[ganadores$Estacion[i]]] <- ajustar_mle_forecast(
+    ganadores$Estacion[i], 
+    ganadores$Orden[i], 
+    so2_ts
+  )
+}
+
+# Ver resultados por estacion Ej:Los Chillos
+print(summary(resultados_mle[["Los Chillos"]]$modelo))
+print(coeftest(resultados_mle[["Los Chillos"]]$modelo))
+```
