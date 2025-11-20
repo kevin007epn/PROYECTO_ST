@@ -27,7 +27,7 @@ library(knitr)
 ruta<-"maate_concentracionso2_2021diciembre.csv"
 ```
 
-```{r, echo=FALSE}
+```{r, echo=FALSE, warning=FALSE}
 datos_so2 <- read.csv(ruta, sep = ";")
 head(datos_so2)
 datos_so2 <- datos_so2 |>  mutate(FECHA=dmy(paste(DIA, MES, ANIO)))
@@ -316,7 +316,7 @@ separar_datos_entrenamiento_prueba <- function(tsibble_datos, prop_entrenamiento
 datos_separados <- separar_datos_entrenamiento_prueba(so2_ts)
 ```
 
-```{}
+```         
 ```
 
 ### Modelado
