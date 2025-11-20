@@ -300,12 +300,14 @@ separar_datos_entrenamiento_prueba <- function(tsibble_datos, prop_entrenamiento
   }
 
   datos_entrenamiento <- tsibble_datos |>
-    slice_head(prop = prop_entrenamiento)
-
+    group_by(ESTACION) |> 
+    slice_head(prop = prop_entrenamiento) |> 
+    ungroup()
 
   datos_prueba <- tsibble_datos |>
-    slice_tail(prop = 1 - prop_entrenamiento)
-
+    group_by(ESTACION) |> 
+    slice_tail(prop = 1 - prop_entrenamiento) |> 
+    ungroup()
 
   return(list(
     entrenamiento = datos_entrenamiento,
@@ -379,7 +381,7 @@ glance_automatico     <- glance(fit_automatico)
 
 tabla_comparativa <- bind_rows(glance_manual_guamani, glance_manual_resto) |>
   bind_rows(glance_automatico) |>
-  select(ESTACION, .model, AIC, AICc, BIC) |>
+  select(ESTACION, MODELO = .model, AIC, AICc, BIC) |>
   arrange(ESTACION, AICc)
 
 kable(tabla_comparativa, 
