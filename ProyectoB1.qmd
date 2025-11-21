@@ -130,7 +130,7 @@ so2_ts |>
 
 ```
 
-(MODIFICAR) Los gráficos de la ACF, muestran que existe auto-correlación con lags pasados. Como por ejemplo el caso de Belisario, posee una alta auto-correlación hasta un lag cercano a 200, a diferencia de la cantidad de SO2 en Carapungo, que muestra una correlación más fuerte con los lag cercanos a 3.
+( MODIFICAR ) Los gráficos de la ACF, muestran que existe auto-correlación con lags pasados. Como por ejemplo el caso de Belisario, posee una alta auto-correlación hasta un lag cercano a 200, a diferencia de la cantidad de SO2 en Carapungo, que muestra una correlación más fuerte con los lag cercanos a 3.
 
 Podemos ver en la siguiente tabla de valores del ACF para las dos series.
 
