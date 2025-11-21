@@ -388,3 +388,108 @@ kable(tabla_comparativa,
       caption = "Comparación de Ajuste: Modelo Propuesto vs. Automático (AICc)",
       digits = 2)
 ```
+
+La serie de Belisario Diferenciada, cumple que:
+
+-   el ACF decae exponencialmente
+
+-   Hay un pico significativo en el las p=1, pero nínguno más allá del lag p, sin considerar la estacionalidad de cada semana
+
+La serie de Carapungo Diferenciada, cumple que:
+
+-   el ACF decae exponencialmente
+
+-   Hay un pico significativo en el las p=1, pero nínguno más allá del lag p, sin considerar la estacionalidad de cada semana
+
+Por tanto, se puede decir que los datos para Belisario y Carapungo siguen un ARIMA(p,d,0), pero por la estacionalidad de los datos, que hace sentido que pasando 7 días, se repita el comportamiento, el mejor modelo que podría ajustarse sea SARIMA.\
+\
+Analisis general, tomando d=1, P=1,D=0,Q=0,S=7.
+
+```{r, echo=FALSE, warning=FALSE}
+#Parametros tras el analisis
+grid_params <- expand.grid(
+  p = 0:3, d = 1, q = 0:3,       # Parte no estacional
+  P = 1, D = 0, Q = 0,     # Parte estacional
+  S = 7                          # Periodo 
+)
+#Modelar y tomar los mejores 2 dado AIC
+modelado_top2 <- function(datos, est, params) {
+  resultados <- list() 
+  
+  for(i in 1:nrow(params)) {
+    fit <- try(arima(datos, 
+                     order = c(params$p[i], params$d[i], params$q[i]),
+                     seasonal = list(order = c(params$P[i], params$D[i], params$Q[i]),period = params$S[i]),), 
+               silent = TRUE)
+    
+    if(!inherits(fit, "try-error")) {
+      resultados[[i]] <- tibble(
+        Estacion = est,
+        Orden = paste0("(",params$p[i],",",params$d[i],",",params$q[i],")",
+                       "(",params$P[i],",",params$D[i],",",params$Q[i],")[",params$S[i],"]"),
+        AIC = fit$aic,
+        BIC = BIC(fit) 
+      )
+    }
+  }
+  
+  
+  bind_rows(resultados) |> 
+    arrange(AIC) |> #Escoger AIC o BIC (Similar)
+    slice_head(n = 2)
+}
+
+mejores_modelos_final <- tibble() 
+estaciones <- unique(so2_ts$ESTACION)
+for(est in estaciones) {
+  serie_vec <- so2_ts |> filter(ESTACION == est) |> pull(SO2)
+  top_estacion <- modelado_top2(serie_vec, est, grid_params)
+  mejores_modelos_final <- bind_rows(mejores_modelos_final, top_estacion)
+}
+mejores_modelos_final <- mejores_modelos_final |> distinct()
+print(mejores_modelos_final)
+
+```
+
+```{r, echo=FALSE, warning=FALSE}
+
+#Estimaciones del mejor modelo de cada estacion
+ganadores <- mejores_modelos_final |>
+  group_by(Estacion) |>
+  slice_min(AIC, n = 1) |>
+  distinct(Estacion, .keep_all = TRUE) |> 
+  ungroup()
+
+
+ajustar_mle_forecast <- function(estacion, orden_str, datos_ts) {
+  
+  nums <- as.numeric(unlist(str_extract_all(orden_str, "\\d+")))
+  serie_vec <- datos_ts |> 
+    filter(ESTACION == estacion) |> 
+    pull(SO2) |> 
+    ts(frequency = 7) 
+  
+  # Ajuste del modelo forzando parámetros y MLE
+  fit <- Arima(serie_vec,
+               order = c(nums[1], nums[2], nums[3]),
+               seasonal = list(order = c(nums[4], nums[5], nums[6]), period = nums[7]),
+               include.mean = TRUE, 
+               method = "ML")
+  
+  return(list(modelo = fit, estacion = estacion, orden = orden_str))
+}
+
+resultados_mle <- list()
+
+for(i in 1:nrow(ganadores)) {
+  resultados_mle[[ganadores$Estacion[i]]] <- ajustar_mle_forecast(
+    ganadores$Estacion[i], 
+    ganadores$Orden[i], 
+    so2_ts
+  )
+}
+
+# Ver resultados por estacion Ej:Los Chillos
+print(summary(resultados_mle[["Los Chillos"]]$modelo))
+print(coeftest(resultados_mle[["Los Chillos"]]$modelo))
+```
