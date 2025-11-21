@@ -125,7 +125,7 @@ so2_ts |>
   ACF(SO2, lag_max = 200) |> 
   autoplot() + 
   labs(title = "ACF de cantidad de SO2 por estación") +
-  facet_wrap(vars(ESTACION), scales = "free_y", ncol = 2) +
+  facet_wrap(vars(ESTACION), scales = "fixed", ncol = 2) +
   theme(legend.position = "none")
 
 ```
@@ -247,7 +247,7 @@ so2_ts |>
   PACF(SO2) |> 
   autoplot() + 
   labs(title = "ACF de cantidad de SO2 por estación") +
-  facet_wrap(vars(ESTACION), scales = "free_y", ncol = 2) +
+  facet_wrap(vars(ESTACION), scales = "fixed", ncol = 2) +
   theme(legend.position = "none")
 
 ```
@@ -353,34 +353,27 @@ $\text{Modelo Propuesto: } ARIMA(1,1,0)(1,0,0)[7]$
 # --- PASO 1: Modelos Manuales (Criterio del Investigador) ---
 
 # A. Para Guamaní (Estacionaria): ARIMA(1,0,0)
-fit_manual_guamani <- datos_separados$entrenamiento |>
+fit_guamani <- datos_separados$entrenamiento |>
   filter(ESTACION == "Guamani") |>
   model(
-    Modelo_Propuesto = ARIMA(SO2 ~ pdq(1, 0, 0) + PDQ(0, 0, 0))
-  )
-
-# B. Para el Resto (No Estacionarias): SARIMA(1,1,0)(1,0,0)[7]
-fit_manual_resto <- datos_separados$entrenamiento |>
-  filter(ESTACION != "Guamani") |>
-  model(
-    Modelo_Propuesto = ARIMA(SO2 ~ pdq(1, 0, 0) + PDQ(1, 0, 0, period = 7))
-  )
-
-
-fit_automatico <- datos_separados$entrenamiento |>
-  model(
+    Modelo_Propuesto = ARIMA(SO2 ~ pdq(1, 0, 0) + PDQ(0, 0, 0)),
     Modelo_Automatico = ARIMA(SO2)
   )
 
+# B. Para el Resto (No Estacionarias): SARIMA(1,1,0)(1,0,0)[7]
+fit_resto <- datos_separados$entrenamiento |>
+  filter(ESTACION != "Guamani") |>
+  model(
+    Modelo_Propuesto = ARIMA(SO2 ~ pdq(1, 0, 0) + PDQ(1, 0, 0, period = 7)),
+    Modelo_Automatico = ARIMA(SO2)
+  )
 #  Extracción de AICc y BIC para comparar ---
 
-glance_manual_guamani <- glance(fit_manual_guamani)
-glance_manual_resto   <- glance(fit_manual_resto)
-glance_automatico     <- glance(fit_automatico)
+glance_guamani <- glance(fit_guamani)
+glance_resto   <- glance(fit_resto)
 
 
-tabla_comparativa <- bind_rows(glance_manual_guamani, glance_manual_resto) |>
-  bind_rows(glance_automatico) |>
+tabla_comparativa <- bind_rows(glance_guamani, glance_resto) |>
   select(ESTACION, MODELO = .model, AIC, AICc, BIC) |>
   arrange(ESTACION, AICc)
 
@@ -492,4 +485,42 @@ for(i in 1:nrow(ganadores)) {
 # Ver resultados por estacion Ej:Los Chillos
 print(summary(resultados_mle[["Los Chillos"]]$modelo))
 print(coeftest(resultados_mle[["Los Chillos"]]$modelo))
+```
+
+```{r}
+# Pronóstico a 1 paso -> h = 7
+# Guamani
+fit_guamani |>
+  forecast(h=7) |>
+  autoplot(so2_ts |> 
+             filter(ESTACION == "Guamani", 
+                    yearmonth(FECHA) >= yearmonth("2018-01") &
+                      yearmonth(FECHA) <= yearmonth("2018-03"))
+           )
+
+
+```
+
+```{r}
+# Belisario
+fit_resto |> 
+  filter(ESTACION == "Belisario") |>
+  forecast(h=7) |>
+  autoplot(serie[[1]] |> 
+             filter(yearmonth(FECHA) >= yearmonth("2016-01") &
+                      yearmonth(FECHA) <= yearmonth("2016-03"))
+           )
+
+```
+
+```{r}
+# Carapungo
+fit_resto |> 
+  filter(ESTACION == "Carapungo") |>
+  forecast(h=7) |>
+  autoplot(serie[[2]] |> 
+             filter(yearmonth(FECHA) >= yearmonth("2016-01") &
+                      yearmonth(FECHA) <= yearmonth("2016-04"))
+           )
+
 ```
