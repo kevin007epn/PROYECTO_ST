@@ -463,7 +463,7 @@ ajustar_mle_forecast <- function(estacion, orden_str, datos_ts) {
     ts(frequency = 7) 
   
   # Ajuste del modelo forzando parámetros y MLE
-  fit <- Arima(serie_vec,
+  fit <- arima(serie_vec,
                order = c(nums[1], nums[2], nums[3]),
                seasonal = list(order = c(nums[4], nums[5], nums[6]), period = nums[7]),
                include.mean = TRUE, 
@@ -487,6 +487,137 @@ print(summary(resultados_mle[["Los Chillos"]]$modelo))
 print(coeftest(resultados_mle[["Los Chillos"]]$modelo))
 ```
 
+### Diagnóstico
+
+```{r, echo=FALSE, include=FALSE}
+#Unificación de modelos para diagnóstico masivo
+modelos_finales <- bind_rows(fit_guamani, fit_resto)
+
+```
+
+Análisis de Residuos (Visual)
+
+```{r, echo=FALSE}
+modelos_finales |>
+  select(Modelo_Propuesto) |>
+  augment() |>
+  autoplot(.innov) +
+  facet_wrap(~ESTACION, scales = "free_y") +
+  labs(title = "Residuos de todas las estaciones", y = "Residuos")
+```
+
+ACF de Residuos
+
+```{r, echo=FALSE}
+modelos_finales |>
+  select(Modelo_Propuesto) |> 
+  augment() |>
+  ACF(.innov, lag_max = 10) |> # 
+  autoplot() +
+  labs(title = "ACF de los Residuos (Modelo Propuesto)",
+       y = "ACF", x = "Lag") +
+  theme(legend.position = "none")
+```
+
+```{r, echo=FALSE}
+modelos_finales |>
+  select(Modelo_Automatico) |> 
+  augment() |>
+  ACF(.innov, lag_max = 10) |> 
+  autoplot() +
+  labs(title = "ACF de los Residuos (Modelo Automático)",
+       y = "ACF", x = "Lag") +
+  theme(legend.position = "none")
+```
+
+Prueba de Ljung-Box
+
+$H_0$ Residuos independientes
+
+```{r, echo=FALSE}
+
+modelos_finales |>
+  select(Modelo_Propuesto) |>  
+  augment() |>
+  features(.innov, ljung_box, lag = 14, dof = 2) |>select(-.model)|>
+  kable(caption = "Ljung-Box: Modelo Propuesto")
+```
+
+```{r, echo=FALSE}
+
+modelos_finales |>
+  select(Modelo_Automatico) |>  
+  augment() |>
+  features(.innov, ljung_box, lag = 14, dof = 2) |>select(-.model)|>
+  kable(caption = "Ljung-Box: Modelo Automático")
+```
+
+Normalidad
+
+```{r,echo=FALSE}
+modelos_finales |>
+  select(Modelo_Propuesto) |>   
+  augment() |>                  
+  ggplot(aes(sample = .innov)) +
+  stat_qq() +                   
+  stat_qq_line(color = "red", linewidth = 1) + # Línea roja de referencia (Normalidad teórica)
+  facet_wrap(~ESTACION, scales = "free") +     # Un gráfico por estación
+  labs(title = "Gráfico Q-Q Normal de los Residuos",
+       subtitle = "Comparación de cuantiles empíricos vs. teóricos",
+       x = "Cuantiles Teóricos (Distribución Normal)",
+       y = "Cuantiles Muestrales (Residuos)") +
+  theme_minimal()
+```
+
+```{r, echo=FALSE}
+modelos_finales |>
+  select(Modelo_Automatico) |>   
+  augment() |>                  
+  ggplot(aes(sample = .innov)) +
+  stat_qq() +                   
+  stat_qq_line(color = "red", linewidth = 1) + # Línea roja de referencia (Normalidad teórica)
+  facet_wrap(~ESTACION, scales = "free") +     # Un gráfico por estación
+  labs(title = "Gráfico Q-Q Normal de los Residuos",
+       subtitle = "Comparación de cuantiles empíricos vs. teóricos",
+       x = "Cuantiles Teóricos (Distribución Normal)",
+       y = "Cuantiles Muestrales (Residuos)") +
+  theme_minimal()
+```
+
+Heterocedasticidad
+
+```{r, echo=FALSE}
+#método de Volatilidad de los residuos^2
+modelos_finales |>
+  select(Modelo_Propuesto) |>
+  augment() |>
+  mutate(residuos_sq = .innov^2) |> # Elevamos al cuadrado
+  ggplot(aes(x = FECHA, y = residuos_sq)) +
+  geom_line() +
+  facet_wrap(~ESTACION, scales = "free_y", ncol = 2) +
+  labs(title = "Heterocedasticidad: Residuos al Cuadrado",
+       subtitle = "Picos altos indican agrupamiento de volatilidad (ARCH effects)",
+       y = "Residuos al Cuadrado", x = "Tiempo") +
+  theme_minimal()
+```
+
+```{r, echo=FALSE}
+#método de Volatilidad de los residuos^2
+modelos_finales |>
+  select(Modelo_Automatico) |>
+  augment() |>
+  mutate(residuos_sq = .innov^2) |> # Elevamos al cuadrado
+  ggplot(aes(x = FECHA, y = residuos_sq)) +
+  geom_line() +
+  facet_wrap(~ESTACION, scales = "free_y", ncol = 2) +
+  labs(title = "Heterocedasticidad: Residuos al Cuadrado",
+       subtitle = "Picos altos indican agrupamiento de volatilidad (ARCH effects)",
+       y = "Residuos al Cuadrado", x = "Tiempo") +
+  theme_minimal()
+```
+
+### Pronóstico y Comparación
+
 ```{r}
 # Pronóstico a 1 paso -> h = 7
 # Guamani
@@ -497,6 +628,7 @@ fit_guamani |>
                     yearmonth(FECHA) >= yearmonth("2018-01") &
                       yearmonth(FECHA) <= yearmonth("2018-03"))
            )
+
 
 
 ```
@@ -524,3 +656,5 @@ fit_resto |>
            )
 
 ```
+
+### 
