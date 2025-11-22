@@ -6,6 +6,38 @@ editor: visual
 
 # Series Temporales: Proyecto B1
 
+### Contexto
+
+#### El Ciclo del Azufre y el Papel del $SO_2​$
+
+El ciclo del azufre es el proceso biogeoquímico mediante el cual este elemento se mueve entre la litosfera (rocas), la hidrosfera (océanos), la biosfera y la atmósfera.
+
+El Dióxido de Azufre ($SO_2$​) es el **protagonista principal de la fase atmosférica** del ciclo. Actúa como un intermediario de vida corta (días) que conecta las emisiones con la deposición:
+
+1.  **Emisión:** El azufre atrapado en **combustibles fósiles (petróleo, carbón), indistrias metalurgicas, refinerias, termoelectricas o en el magma volcánico** se libera a la atmósfera como gas SO2​ tras la combustión o erupción.
+
+2.  **Transformación:** Una vez en el aire, el SO2​ reacciona con la luz solar y la humedad. Se oxida para formar sulfatos ($SO_4 ^{2-}$​) y ácido sulfúrico ($H_2 SO_4$).
+
+3.  **Deposición:** Estos compuestos caen a la tierra y océanos mediante la **lluvia ácida** o deposición seca, acidificando suelos y aguas, cerrando el ciclo al volver a la litosfera/hidrosfera.
+
+![](images/clipboard-3256375208.jpeg){width="498"}
+
+### Impacto
+
+#### Salud Humana (Exposición Aguda y Crónica)
+
+-   **Sistema Respiratorio:** El $SO_2$​ irrita las vías respiratorias. Provoca tos, secreción mucosa, agravamiento del asma y bronquitis crónica.
+
+-   **Sistema Cardiovascular:** Se asocia con un mayor riesgo de ingresos hospitalarios por enfermedades cardíacas y mortalidad prematura.
+
+#### Medio Ambiente e Infraestructura
+
+-   **Lluvia Ácida:** La conversión a $H_2​SO_4$​ acidifica lagos (matando peces), daña la fertilidad del suelo y quema las hojas de la vegetación.
+
+-   **Daño a la Vegetación (Clorosis):** Altas concentraciones entran por los estomas de las hojas, degradando la clorofila y reduciendo la fotosíntesis.
+
+-   **Corrosión de Materiales:** Acelera el deterioro de edificios, monumentos de piedra caliza y estructuras metálicas
+
 ```{r, echo=FALSE, include=FALSE}
 #Librerías
 library(tsibble)
@@ -23,9 +55,44 @@ library(stringr)
 library(patchwork)
 library(feasts)
 library(knitr)
-
+library(leaflet)
 ruta<-"maate_concentracionso2_2021diciembre.csv"
 ```
+
+\##<https://mapcarta.com/es/19666194>\## Fuente de las locaciones
+
+**Sectores de medicion de SO2**
+
+```{r}
+# 1. Definir coordenadas centrales de los sectores
+ubicaciones_sectores <- data.frame(
+  SECTOR = c("Belisario", "Carapungo", "Centro Histórico", "Cotocollao", 
+             "El Camal", "Guamani", "Los Chillos", "Tumbaco"),
+  LAT = c(-0.18994, -0.2544, -0.22365, -0.11475, 
+          -0.2494, -0.32894, -0.26667, -0.21226),
+  LON = c(-78.50727, -78.54411, -78.51559, -78.49775,
+          -78.51975, -78.5596, -78.48333, -78.4045)
+)
+
+# 2. Crear Mapa de Áreas
+leaflet() |>
+  addTiles() |> # Mapa base (Calles)
+  # CAPA 1: Áreas de los Sectores 
+  addCircles(data = ubicaciones_sectores,
+             lng = ~LON, lat = ~LAT,
+             radius = 2000, # Radio en metros (2 km)
+             color = "red",       # Color del borde
+             fillColor = "red",   # Color de relleno
+             fillOpacity = 0.2,   # Transparencia (para ver el mapa debajo)
+             popup = ~paste("Sector:", SECTOR),
+             group = "Sectores (Áreas)") |>
+  addLayersControl(
+    overlayGroups = c("Sectores (Áreas)", "Mis Puntos"),
+    options = layersControlOptions(collapsed = FALSE)
+  )
+```
+
+\
 
 ```{r, echo=FALSE, warning=FALSE}
 datos_so2 <- read.csv(ruta, sep = ";")
@@ -41,8 +108,6 @@ so2_diario <- datos_so2 |>
 Tomaremos como nuestro índice temporal a la variable *FECHA.*
 
 Ahora, el estudio se realizará en la provincia de Pichincha, entonces, las series temporales consideradas se basarán en cada estación de cada cantón de la ciudad de Quito. Como primera instancia, se realizará un análisis de características de seis estaciones de interés; a saber, Belisario, Carapungo, Cotocollao, Tumbaco, (las dos que faltan). En conjunto, estas estaciones muestran un gran contraste en la tipología de exposición y las fuentes de emisión, puesto que algunas de ellas enfrentan diariamente una exposición y emisión alta de SO2 por la presencia de actividades humanas a comparación de otras.
-
-Borrar 2
 
 ```{r warning=FALSE, include=FALSE}
 
@@ -364,7 +429,7 @@ fit_guamani <- datos_separados$entrenamiento |>
 fit_resto <- datos_separados$entrenamiento |>
   filter(ESTACION != "Guamani") |>
   model(
-    Modelo_Propuesto = ARIMA(SO2 ~ pdq(1, 0, 0) + PDQ(1, 0, 0, period = 7)),
+    Modelo_Propuesto = ARIMA(SO2 ~ pdq(1, 1, 0) + PDQ(1, 0, 0, period = 7)),
     Modelo_Automatico = ARIMA(SO2),
     Modelo_SNAIVE    = SNAIVE(SO2 ~ lag(7)),
     Modelo_Lineal    = TSLM(SO2 ~ trend() + season(period=7))
@@ -468,7 +533,7 @@ ACF de Residuos
 modelos_finales |>
   select(Modelo_Propuesto) |> 
   augment() |>
-  ACF(.innov, lag_max = 10) |> # 
+  ACF(.innov, lag_max = 10) |>  
   autoplot() +
   labs(title = "ACF de los Residuos (Modelo Propuesto)",
        y = "ACF", x = "Lag") +
@@ -613,5 +678,44 @@ fit_resto |>
 
 ```
 
-
 ### Discusión
+
+#### Interpretacion de los parametros
+
+El análisis de los coeficientes estimados del AR y del MA permite caracterizar el comportamiento físico del $SO_2$​ en la atmósfera de Quito
+
+```{r}
+bind_rows(fit_guamani, fit_resto) |>
+  select(Modelo_Automatico) |>
+  tidy() |>
+  select(ESTACION, term, estimate) |>
+  pivot_wider(names_from = term, values_from = estimate)
+```
+
+##### Componente Autorregresivo (AR): "Memoria" 
+
+Para las estaciones Belisario, Carapungo, Los Chillos y Tumbaco, Estas estaciones presentan un coeficiente AR(1) positivo y significativo, lo que denota una alta persistencia de la contaminación. Esto sugiere que las condiciones meteorológicas en estos sectores no favorecen una dispersión inmediata, generando episodios de alta concentración tienden a durar varios días.
+
+A diferencia del resto, Cotocollao muestra un comportamiento de oscilatorio. Esto implica que la atmósfera en este sector tiene una dinámica más volátil, posiblemente debido a vientos locales que evitan la acumulación sostenida del contaminante de un día para otro.
+
+Se confirma una fuerte dependencia temporal (alta memoria). Físicamente, esto se interpreta como una zona de baja capacidad dispersiva, donde el $SO_2$​ se acumula y queda atrapado, probablemente debido a la topografía del sur de Quito o a fuentes de emisión constantes sin ventilación adecuada.
+
+##### Componente de Media Móvil (MA): "Persistencia"
+
+Los coeficientes negativos implican la dispersion de SO2 en las zonas correspondientes, muchas concentraciones de SO2 son desplazadas diariamente a traves de vientos fuertes o por las nubes que las arrastran para generar las lluvias acidas.
+
+El signo negativo en el coeficiente MA indica un mecanismo de corrección rápida. Físicamente, esto sugiere que estas zonas están expuestas a dinámicas de ventilación activa (vientos fuertes o turbulencia) o lavado atmosférico (lluvia). Cuando ocurre un incremento abrupto de SO2​ (un choque), este no persiste, sino que es dispersado eficazmente, haciendo que los niveles retornen rápidamente (o incluso caigan por debajo) de la media al día siguiente. El sistema 'castiga' los excesos inmediatos.
+
+Por el contrario, Cotocollao presenta un coeficiente positivo, lo que implica una persistencia del choque. En este sector, los eventos inesperados de contaminación no se disipan inmediatamente, sino que se 'arrastran' parcialmente al día siguiente. Esto denota una menor capacidad de ventilación inmediata ante eventos puntuales, permitiendo que los remanentes de contaminación permanezcan en el aire por más tiempo.
+
+##### Residuos: "Ruido"
+
+Los residuos del modelo representan la componente no sistemática de la concentración de $SO2$​. En el contexto de Quito, se interpreta que este componente almacena la información de variables meteorológicas dinámicas (viento, precipitación) y eventos de emisión discretos que no siguen un patrón calendario fijo. El hecho de que los residuos se aproximen a ruido blanco (sin autocorrelación) indica la naturaleza caótica e impredecible de la atmósfera urbana.
+
+#### Conclusión del desempeño 
+
+Los modelos ARIMA superaron en precisión (menor RMSE) tanto a la regresión lineal (TSLM) como al método ingenuo (SNAIVE), demostrando que la concentración de $SO2$​ obedece a una dinámica estocástica compleja y no a patrones deterministas simples. El ajuste de la media fue satisfactorio, logrando residuos sin autocorrelación.
+
+#### Limitaciones y posibles extenciones
+
+Los modelos ARIMA ignoran variables meteorológicas críticas (viento, lluvia) que limpian o dispersan el contaminante, limitando la predicción de cambios bruscos. Se siguen posibles implementaciones de modelos ARIMAX para incluir forzantes meteorológicos, o modelos híbridos ARIMA para modelar explícitamente la volatilidad variable y mejorar la estimación de riesgo en alertas ambientales.
