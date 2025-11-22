@@ -45,6 +45,7 @@ Ahora, el estudio se realizará en la provincia de Pichincha, entonces, las seri
 Borrar 2
 
 ```{r warning=FALSE, include=FALSE}
+
 vector_estaciones <- c("Belisario", "Carapungo", "Cotocollao", "Tumbaco","Los Chillos","Guamani")
 
 so2_ts <- so2_diario |> 
@@ -318,9 +319,6 @@ separar_datos_entrenamiento_prueba <- function(tsibble_datos, prop_entrenamiento
 datos_separados <- separar_datos_entrenamiento_prueba(so2_ts)
 ```
 
-```         
-```
-
 ### Modelado
 
 Dado que el análisis exploratorio reveló comportamientos heterogéneos entre las estaciones de monitoreo, especialmente en lo referente a la estacionariedad (Test KPSS), se ha optado por especificar modelos distintos que se ajusten a la estructura particular de cada serie.
@@ -357,7 +355,9 @@ fit_guamani <- datos_separados$entrenamiento |>
   filter(ESTACION == "Guamani") |>
   model(
     Modelo_Propuesto = ARIMA(SO2 ~ pdq(1, 0, 0) + PDQ(0, 0, 0)),
-    Modelo_Automatico = ARIMA(SO2)
+    Modelo_Automatico = ARIMA(SO2),
+    Modelo_SNAIVE    = SNAIVE(SO2 ~ lag(7)),
+    Modelo_Lineal    = TSLM(SO2 ~ trend() + season(period=7))
   )
 
 # B. Para el Resto (No Estacionarias): SARIMA(1,1,0)(1,0,0)[7]
@@ -365,21 +365,53 @@ fit_resto <- datos_separados$entrenamiento |>
   filter(ESTACION != "Guamani") |>
   model(
     Modelo_Propuesto = ARIMA(SO2 ~ pdq(1, 0, 0) + PDQ(1, 0, 0, period = 7)),
-    Modelo_Automatico = ARIMA(SO2)
+    Modelo_Automatico = ARIMA(SO2),
+    Modelo_SNAIVE    = SNAIVE(SO2 ~ lag(7)),
+    Modelo_Lineal    = TSLM(SO2 ~ trend() + season(period=7))
   )
-#  Extracción de AICc y BIC para comparar ---
+
 
 glance_guamani <- glance(fit_guamani)
 glance_resto   <- glance(fit_resto)
 
 
-tabla_comparativa <- bind_rows(glance_guamani, glance_resto) |>
+tabla_comparativa_1 <- bind_rows(glance_guamani, glance_resto) |>
+  filter(.model != "Modelo_SNAIVE") |>
   select(ESTACION, MODELO = .model, AIC, AICc, BIC) |>
   arrange(ESTACION, AICc)
 
-kable(tabla_comparativa, 
-      caption = "Comparación de Ajuste: Modelo Propuesto vs. Automático (AICc)",
+kable(tabla_comparativa_1, 
+      caption = "Comparación de Ajuste: Modelo Propuesto vs. Automáticos (Lineal, ARIMA automatico)",
       digits = 2)
+
+```
+
+Los modelos ARIMA tienen un mayor AIC que el modelo Lineal.
+
+```{r}
+tabla_comparativa_2 <- accuracy(bind_rows(fit_guamani, fit_resto)) |>
+  select(ESTACION, Modelo = .model, RMSE, MAE) |>
+  arrange(ESTACION, RMSE)
+
+kable(tabla_comparativa_2, 
+      caption = "Comparación de Modelos por Precisión",
+      digits = 2)
+```
+
+\
+Los modelos ARIMA tienen mejor error cuadratico respecto al lineal y al SNAIVE.
+
+```{r}
+todos_los_modelos <- bind_rows(fit_guamani, fit_resto) 
+tabla_ordenes <- todos_los_modelos |>
+  as_tibble() |> 
+  pivot_longer(cols = c(Modelo_Propuesto, Modelo_Automatico), 
+               names_to = "Tipo_Modelo", 
+               values_to = "Objeto_Modelo") |>
+  mutate(Descripcion = format(Objeto_Modelo)) |> 
+  select(ESTACION, Tipo_Modelo, Descripcion)
+
+kable(tabla_ordenes, caption = "Órdenes ARIMA (pdq)(PDQ)")
 ```
 
 La serie de Belisario Diferenciada, cumple que:
@@ -396,95 +428,19 @@ La serie de Carapungo Diferenciada, cumple que:
 
 Por tanto, se puede decir que los datos para Belisario y Carapungo siguen un ARIMA(p,d,0), pero por la estacionalidad de los datos, que hace sentido que pasando 7 días, se repita el comportamiento, el mejor modelo que podría ajustarse sea SARIMA.\
 \
-Analisis general, tomando d=1, P=1,D=0,Q=0,S=7.
+
+Coeficientes de los modelos mediante maxima verosimilitud
 
 ```{r, echo=FALSE, warning=FALSE}
-#Parametros tras el analisis
-grid_params <- expand.grid(
-  p = 0:3, d = 1, q = 0:3,       # Parte no estacional
-  P = 1, D = 0, Q = 0,     # Parte estacional
-  S = 7                          # Periodo 
-)
-#Modelar y tomar los mejores 2 dado AIC
-modelado_top2 <- function(datos, est, params) {
-  resultados <- list() 
-  
-  for(i in 1:nrow(params)) {
-    fit <- try(arima(datos, 
-                     order = c(params$p[i], params$d[i], params$q[i]),
-                     seasonal = list(order = c(params$P[i], params$D[i], params$Q[i]),period = params$S[i]),), 
-               silent = TRUE)
-    
-    if(!inherits(fit, "try-error")) {
-      resultados[[i]] <- tibble(
-        Estacion = est,
-        Orden = paste0("(",params$p[i],",",params$d[i],",",params$q[i],")",
-                       "(",params$P[i],",",params$D[i],",",params$Q[i],")[",params$S[i],"]"),
-        AIC = fit$aic,
-        BIC = BIC(fit) 
-      )
-    }
-  }
-  
-  
-  bind_rows(resultados) |> 
-    arrange(AIC) |> #Escoger AIC o BIC (Similar)
-    slice_head(n = 2)
-}
-
-mejores_modelos_final <- tibble() 
-estaciones <- unique(so2_ts$ESTACION)
-for(est in estaciones) {
-  serie_vec <- so2_ts |> filter(ESTACION == est) |> pull(SO2)
-  top_estacion <- modelado_top2(serie_vec, est, grid_params)
-  mejores_modelos_final <- bind_rows(mejores_modelos_final, top_estacion)
-}
-mejores_modelos_final <- mejores_modelos_final |> distinct()
-print(mejores_modelos_final)
-
-```
-
-```{r, echo=FALSE, warning=FALSE}
-
+##Maxima verosimilitud modelos anteriores
 #Estimaciones del mejor modelo de cada estacion
-ganadores <- mejores_modelos_final |>
-  group_by(Estacion) |>
-  slice_min(AIC, n = 1) |>
-  distinct(Estacion, .keep_all = TRUE) |> 
-  ungroup()
+coeficientes_mle <- bind_rows(fit_guamani, fit_resto) |>
+  select(-Modelo_Lineal)|>
+  tidy() 
 
 
-ajustar_mle_forecast <- function(estacion, orden_str, datos_ts) {
-  
-  nums <- as.numeric(unlist(str_extract_all(orden_str, "\\d+")))
-  serie_vec <- datos_ts |> 
-    filter(ESTACION == estacion) |> 
-    pull(SO2) |> 
-    ts(frequency = 7) 
-  
-  # Ajuste del modelo forzando parámetros y MLE
-  fit <- arima(serie_vec,
-               order = c(nums[1], nums[2], nums[3]),
-               seasonal = list(order = c(nums[4], nums[5], nums[6]), period = nums[7]),
-               include.mean = TRUE, 
-               method = "ML")
-  
-  return(list(modelo = fit, estacion = estacion, orden = orden_str))
-}
-
-resultados_mle <- list()
-
-for(i in 1:nrow(ganadores)) {
-  resultados_mle[[ganadores$Estacion[i]]] <- ajustar_mle_forecast(
-    ganadores$Estacion[i], 
-    ganadores$Orden[i], 
-    so2_ts
-  )
-}
-
-# Ver resultados por estacion Ej:Los Chillos
-print(summary(resultados_mle[["Los Chillos"]]$modelo))
-print(coeftest(resultados_mle[["Los Chillos"]]$modelo))
+# Mostrar tabla
+kable(coeficientes_mle, caption = "Coeficientes Estimados (MLE) - Solo ARIMA")
 ```
 
 ### Diagnóstico
@@ -657,4 +613,5 @@ fit_resto |>
 
 ```
 
-### 
+
+### Discusión
