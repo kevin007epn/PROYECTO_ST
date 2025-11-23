@@ -516,7 +516,7 @@ modelos_finales <- bind_rows(fit_guamani, fit_resto)
 
 ```
 
-Análisis de Residuos (Visual)
+#### Análisis de Residuos (Visual)
 
 ```{r, echo=FALSE}
 modelos_finales |>
@@ -527,7 +527,7 @@ modelos_finales |>
   labs(title = "Residuos de todas las estaciones", y = "Residuos")
 ```
 
-ACF de Residuos
+#### ACF de Residuos
 
 ```{r, echo=FALSE}
 modelos_finales |>
@@ -551,9 +551,9 @@ modelos_finales |>
   theme(legend.position = "none")
 ```
 
-Prueba de Ljung-Box
+#### Prueba de Ljung-Box
 
-$H_0$ Residuos independientes
+##### $H_0$ Residuos independientes
 
 ```{r, echo=FALSE}
 
@@ -573,7 +573,7 @@ modelos_finales |>
   kable(caption = "Ljung-Box: Modelo Automático")
 ```
 
-Normalidad
+#### Normalidad
 
 ```{r,echo=FALSE}
 modelos_finales |>
@@ -605,7 +605,7 @@ modelos_finales |>
   theme_minimal()
 ```
 
-Heterocedasticidad
+#### Heterocedasticidad
 
 ```{r, echo=FALSE}
 #método de Volatilidad de los residuos^2
@@ -636,6 +636,102 @@ modelos_finales |>
        y = "Residuos al Cuadrado", x = "Tiempo") +
   theme_minimal()
 ```
+
+#### Comprobación de Estabildiad
+
+##### Modelo Propuesto
+
+```{r, echo=FALSE, warning=FALSE}
+library(feasts)
+
+modelos_finales |>
+  select(Modelo_Propuesto) |> 
+  gg_arma() +
+  labs(title = "Verificación de Estabilidad: Raíces Inversas del Modelo",
+       subtitle = "Los puntos deben estar DENTRO del círculo para ser estables",
+       y = "Parte Imaginaria", 
+       x = "Parte Real") +
+  theme_minimal()
+```
+
+```{r, echo=FALSE, warning=FALSE}
+coeficientes <- modelos_finales |>
+  select(Modelo_Propuesto) |>
+  tidy() |>
+  filter(term %in% c("sar1"))|>select(-.model)
+
+print(coeficientes, n = 20)
+```
+
+Las raíces inversas de los puntos de la componente seasonal, son relativamente pequeños, mostrando que la fuerza de relación de dicha componente es baja, además por otro lado se nota por la columna statictic, que dicho componente es estadísticamente significativo, vale la pena mantenerlo/
+
+##### Modelos Automático
+
+```{r, echo=FALSE, warning=FALSE}
+library(feasts)
+
+modelos_finales |>
+  select(Modelo_Automatico) |> 
+  gg_arma() +
+  labs(title = "Verificación de Estabilidad: Raíces\n Inversas del Modelo",
+       subtitle = "Los puntos deben estar DENTRO \ndel círculo para ser estables",
+       y = "Parte Imaginaria", 
+       x = "Parte Real") +
+  theme_minimal()
+
+```
+
+El gráfico de raíces inversas muestra que, para todas las estaciones (Guamaní, Belisario, Carapungo, etc.), tanto las raíces autoregresivas (puntos rojos) como las de media móvil (si las hubiera) se encuentran estrictamente **dentro del círculo unitario**.
+
+-   Esto confirma que los modelos automáticos seleccionados son **estacionarios e invertibles**. No existen raíces unitarias que provoquen un comportamiento explosivo en los pronósticos a largo plazo.
+
+```{r, echo=FALSE, warning=FALSE}
+coeficientes <- modelos_finales |>
+  select(Modelo_Automatico) |>
+  tidy() |>
+  filter(term %in% c("sar1"))|>select(-.model)
+
+print(coeficientes, n = 20)
+
+```
+
+-   **Estacionalidad Significativa (Caso Belisario):** Se observa un coeficiente estimado de **0.147** con un *p-value* extremadamente bajo ($< 0.001$). Esto indica una estacionalidad semanal estadísticamente robusta, visible en el gráfico de raíces como un patrón geométrico claro dentro del círculo.
+
+-   **Estacionalidad Débil (Caso Carapungo):** El coeficiente es muy pequeño (**0.031**) y su significancia está en el límite ($p \approx 0.054$). Esto explica por qué en el gráfico de estabilidad los puntos rojos de Carapungo aparecen "colapsados" en el centro del círculo (origen): la magnitud del efecto estacional es tan baja que apenas desplaza las raíces del cero.
+
+-   **Estacionalidad No Significativa (Caso Guamaní):** A pesar de tener un estimador más alto en magnitud (-0.48), el *p-value* de **0.169** indica que este componente estacional no es estadísticamente significativo y podría ser ruido aleatorio que el algoritmo automático intentó ajustar.
+
+#### Parsimonia de los Modelos
+
+##### Modelo Propuesto
+
+```{r, echo=FALSE}
+tabla_parsimonia <- modelos_finales |>
+  select(Modelo_Propuesto) |>
+  glance() |>
+  select(ESTACION, AIC, AICc, BIC, sigma2) |>
+  arrange(AICc)
+
+kable(tabla_parsimonia, 
+      caption = "Análisis de Parsimonia: Criterios de Información (Menor es mejor)",
+      digits = 2)
+```
+
+##### Modelo Atumático
+
+```{r, echo=FALSE}
+tabla_parsimonia <- modelos_finales |>
+  select(Modelo_Automatico) |>
+  glance() |>
+  select(ESTACION, AIC, AICc, BIC, sigma2) |>
+  arrange(AICc)
+
+kable(tabla_parsimonia, 
+      caption = "Análisis de Parsimonia: Criterios de Información (Menor es mejor)",
+      digits = 2)
+```
+
+Ambos modelos presentan una naturaleza volátil y completa de la contaminación en estas zonas de alto tráfico, donde la suma de erroes cuadrados es naturalmente mayor.
 
 ### Pronóstico y Comparación
 
@@ -692,7 +788,7 @@ bind_rows(fit_guamani, fit_resto) |>
   pivot_wider(names_from = term, values_from = estimate)
 ```
 
-##### Componente Autorregresivo (AR): "Memoria" 
+##### Componente Autorregresivo (AR): "Memoria"
 
 Para las estaciones Belisario, Carapungo, Los Chillos y Tumbaco, Estas estaciones presentan un coeficiente AR(1) positivo y significativo, lo que denota una alta persistencia de la contaminación. Esto sugiere que las condiciones meteorológicas en estos sectores no favorecen una dispersión inmediata, generando episodios de alta concentración tienden a durar varios días.
 
@@ -712,7 +808,7 @@ Por el contrario, Cotocollao presenta un coeficiente positivo, lo que implica un
 
 Los residuos del modelo representan la componente no sistemática de la concentración de $SO2$​. En el contexto de Quito, se interpreta que este componente almacena la información de variables meteorológicas dinámicas (viento, precipitación) y eventos de emisión discretos que no siguen un patrón calendario fijo. El hecho de que los residuos se aproximen a ruido blanco (sin autocorrelación) indica la naturaleza caótica e impredecible de la atmósfera urbana.
 
-#### Conclusión del desempeño 
+#### Conclusión del desempeño
 
 Los modelos ARIMA superaron en precisión (menor RMSE) tanto a la regresión lineal (TSLM) como al método ingenuo (SNAIVE), demostrando que la concentración de $SO2$​ obedece a una dinámica estocástica compleja y no a patrones deterministas simples. El ajuste de la media fue satisfactorio, logrando residuos sin autocorrelación.
 
