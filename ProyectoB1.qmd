@@ -312,7 +312,7 @@ Ahora, con nuestras series transformadas a series estacionarias, la información
 so2_ts |> 
   PACF(SO2) |> 
   autoplot() + 
-  labs(title = "ACF de cantidad de SO2 por estación") +
+  labs(title = "PACF de cantidad de SO2 por estación") +
   facet_wrap(vars(ESTACION), scales = "fixed", ncol = 2) +
   theme(legend.position = "none")
 
@@ -736,41 +736,210 @@ Ambos modelos presentan una naturaleza volátil y completa de la contaminación 
 ### Pronóstico y Comparación
 
 ```{r}
-# Pronóstico a 1 paso -> h = 7
+# Pronóstico a h pasos
 # Guamani
-fit_guamani |>
-  forecast(h=7) |>
+h <- 6
+
+fc1_guamani <- fit_guamani |>
+  forecast(h=h)
+
+# Resto
+fc1_resto <- fit_resto |> 
+  forecast(h=h)
+
+fc1_guamani |>
   autoplot(so2_ts |> 
              filter(ESTACION == "Guamani", 
                     yearmonth(FECHA) >= yearmonth("2018-01") &
-                      yearmonth(FECHA) <= yearmonth("2018-03"))
-           )
-
-
+                      yearmonth(FECHA) <= yearmonth("2018-01")), 
+           level = NULL
+  ) +
+  labs(
+    x = "2018", y = "SO2 HG/m^3",
+    title = "Pronósticos de la cantidad de S02 en Guamani"
+  ) +
+  guides(colour = guide_legend(title = "Modelos"))
 
 ```
 
 ```{r}
 # Belisario
-fit_resto |> 
+fc1_resto |> 
   filter(ESTACION == "Belisario") |>
-  forecast(h=7) |>
   autoplot(serie[[1]] |> 
-             filter(yearmonth(FECHA) >= yearmonth("2016-01") &
-                      yearmonth(FECHA) <= yearmonth("2016-03"))
-           )
+             filter(yearmonth(FECHA) >= yearmonth("2016-03") &
+                      yearmonth(FECHA) <= yearmonth("2016-03")), 
+           level = NULL
+  ) +
+  labs(
+    x = "2016", y = "SO2 HG/m^3",
+    title = "Pronósticos de la cantidad de S02 en Belisario"
+  ) +
+  guides(colour = guide_legend(title = "Modelos"))
 
 ```
 
 ```{r}
 # Carapungo
-fit_resto |> 
+fc1_resto |> 
   filter(ESTACION == "Carapungo") |>
-  forecast(h=7) |>
   autoplot(serie[[2]] |> 
-             filter(yearmonth(FECHA) >= yearmonth("2016-01") &
-                      yearmonth(FECHA) <= yearmonth("2016-04"))
-           )
+             filter(yearmonth(FECHA) >= yearmonth("2016-03") &
+                      yearmonth(FECHA) <= yearmonth("2016-04")), 
+           level = NULL
+  ) +
+  labs(
+    x = "2016", y = "SO2 HG/m^3",
+    title = "Pronósticos de la cantidad de S02 en Carapungo"
+  ) +
+  guides(colour = guide_legend(title = "Modelos"))
+
+```
+
+```{r}
+# Cotocollao
+fc1_resto |> 
+  filter(ESTACION == "Cotocollao") |>
+  autoplot(serie[[3]] |> 
+             filter(yearmonth(FECHA) >= yearmonth("2016-03") &
+                      yearmonth(FECHA) <= yearmonth("2016-04")), 
+           level = NULL
+  ) +
+  labs(
+    x = "2016", y = "SO2 HG/m^3",
+    title = "Pronósticos de la cantidad de S02 en Cotocollao"
+  ) +
+  guides(colour = guide_legend(title = "Modelos"))
+
+```
+
+```{r}
+# Tumbaco
+fc1_resto |> 
+  filter(ESTACION == "Tumbaco") |>
+  autoplot(serie[[4]] |> 
+             filter(yearmonth(FECHA) >= yearmonth("2017-01") &
+                      yearmonth(FECHA) <= yearmonth("2017-01")), 
+           level = NULL
+  ) +
+  labs(
+    x = "2017", y = "SO2 HG/m^3",
+    title = "Pronósticos de la cantidad de S02 en Tumbaco"
+  ) +
+  guides(colour = guide_legend(title = "Modelos"))
+
+```
+
+```{r}
+# Los Chillos
+fc1_resto |> 
+  filter(ESTACION == "Los Chillos") |>
+  autoplot(serie[[5]] |> 
+             filter(yearmonth(FECHA) >= yearmonth("2017-10") &
+                      yearmonth(FECHA) <= yearmonth("2017-10")), 
+           level = NULL
+  ) +
+  labs(
+    x = "2017", y = "SO2 HG/m^3",
+    title = "Pronósticos de la cantidad de S02 en Los Chillos"
+  ) +
+  guides(colour = guide_legend(title = "Modelos"))
+
+```
+
+#### Validación mediante rolling origin con al menos 10 origenes
+
+```{r}
+# cross-validation accuracy
+cv_guamani <- datos_separados$entrenamiento |>
+  filter(ESTACION == "Guamani") |>
+  stretch_tsibble(.init = 5, .step = 100)
+
+```
+
+```{r}
+# Comparación predicciones de modelos mediante métricas para Guamani
+# Training set accuracy
+accuracy_guamani <- fc1_guamani |> 
+  accuracy(datos_separados$prueba |>
+             filter(ESTACION == "Guamani"))
+
+```
+
+```{r}
+# TSCV accuracy
+modelos_cv_guamani <- cv_guamani |>
+  model(
+    CV_Propuesto = ARIMA(SO2 ~ pdq(1, 1, 0) + PDQ(1, 0, 0, period = 7)),
+    CV_Automatico = ARIMA(SO2),
+    CV_SNAIVE    = SNAIVE(SO2 ~ lag(7)),
+    CV_Lineal    = TSLM(SO2 ~ trend() + season(period=7))
+  )
+
+forecast_cv_guamani <- modelos_cv_guamani |>
+  forecast(h = h)
+
+accuracy_cv_guamani <- forecast_cv_guamani |>
+  accuracy(datos_separados$prueba |>
+             filter(ESTACION == "Guamani"))
+
+```
+
+```{r}
+# cross-validation accuracy
+cv_resto <- datos_separados$entrenamiento |>
+  filter(ESTACION != "Guamani") |>
+  stretch_tsibble(.init = 5, .step = 100)
+
+```
+
+```{r}
+# Comparación predicciones de modelos mediante métricas para Belisario
+# Training set accuracy
+accuracy_resto <- fc1_resto |> 
+  accuracy(datos_separados$prueba) |> 
+  arrange(ESTACION)
+
+```
+
+```{r}
+# TSCV accuracy
+modelos_cv_resto <- cv_resto |>
+  group_by(ESTACION) |>
+  model(
+    CV_Propuesto = ARIMA(SO2 ~ pdq(1, 1, 0) + PDQ(1, 0, 0, period = 7)),
+    CV_Automatico = ARIMA(SO2),
+    CV_SNAIVE    = SNAIVE(SO2 ~ lag(7)),
+    CV_Lineal    = TSLM(SO2 ~ trend() + season(period=7))
+  )
+
+forecast_cv_resto <- modelos_cv_resto |>
+  forecast(h = h)
+
+accuracy_cv_resto <- forecast_cv_resto |>
+  accuracy(datos_separados$prueba |>
+             filter(ESTACION != "Guamani"))
+
+```
+
+```{r}
+# 3. Combinar resultados de validación cruzada
+accuracy_cv_total <- bind_rows(accuracy_cv_guamani, accuracy_cv_resto) |> 
+  filter(!is.na(MAPE))
+
+accuracy_total <- bind_rows(accuracy_guamani, accuracy_resto) |> 
+  bind_rows(accuracy_cv_total)
+
+# Seleccionar el mejor modelo por estación basado en MAPE
+mejores_modelos <- accuracy_total |>
+  group_by(ESTACION, .model) |>
+  summarise(MAPE = mean(MAPE), .groups = 'drop') |>
+  group_by(ESTACION) |>
+  slice_min(MAPE, n = 1) |>
+  ungroup()
+
+# Tabla resumen con el modelo ganador por estación
+mejores_modelos
 
 ```
 
