@@ -933,12 +933,12 @@ accuracy_cv_total <- bind_rows(accuracy_cv_guamani, accuracy_cv_resto) |>
 accuracy_total <- bind_rows(accuracy_guamani, accuracy_resto) |> 
   bind_rows(accuracy_cv_total)
 
-# Seleccionar el mejor modelo por estación basado en MAPE
+# Seleccionar el mejor modelo por estación basado en MASE
 mejores_modelos <- accuracy_total |>
   group_by(ESTACION, .model) |>
-  summarise(MAPE = mean(MAPE), .groups = 'drop') |>
+  summarise(MASE = mean(MASE), .groups = 'drop') |>
   group_by(ESTACION) |>
-  slice_min(MAPE, n = 1) |>
+  slice_min(MASE, n = 1) |>
   ungroup()
 
 # Tabla resumen con el modelo ganador por estación
