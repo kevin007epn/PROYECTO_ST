@@ -107,7 +107,7 @@ so2_diario <- datos_so2 |>
 
 Tomaremos como nuestro índice temporal a la variable *FECHA.*
 
-Ahora, el estudio se realizará en la provincia de Pichincha, entonces, las series temporales consideradas se basarán en cada estación de cada cantón de la ciudad de Quito. Como primera instancia, se realizará un análisis de características de seis estaciones de interés; a saber, Belisario, Carapungo, Cotocollao, Tumbaco, (las dos que faltan). En conjunto, estas estaciones muestran un gran contraste en la tipología de exposición y las fuentes de emisión, puesto que algunas de ellas enfrentan diariamente una exposición y emisión alta de SO2 por la presencia de actividades humanas a comparación de otras.
+Ahora, el estudio se realizará en la provincia de Pichincha, entonces, las series temporales consideradas se basarán en cada estación de cada cantón de la ciudad de Quito. Como primera instancia, se realizará un análisis de características de seis estaciones de interés; a saber, Belisario, Carapungo, Cotocollao, Tumbaco, Los Chillos y Guamani. En conjunto, estas estaciones muestran un gran contraste en la tipología de exposición y las fuentes de emisión, puesto que algunas de ellas enfrentan diariamente una exposición y emisión alta de SO2 por la presencia de actividades humanas a comparación de otras.
 
 ```{r warning=FALSE, include=FALSE}
 
@@ -196,7 +196,7 @@ so2_ts |>
 
 ```
 
-( MODIFICAR ) Los gráficos de la ACF, muestran que existe auto-correlación con lags pasados. Como por ejemplo el caso de Belisario, posee una alta auto-correlación hasta un lag cercano a 200, a diferencia de la cantidad de SO2 en Carapungo, que muestra una correlación más fuerte con los lag cercanos a 3.
+Los gráficos de la ACF, muestran que existe auto-correlación con lags pasados. Como por ejemplo el caso de Belisario, posee una alta auto-correlación hasta un lag cercano a 200, a diferencia de la cantidad de SO2 en Carapungo, que muestra una correlación más fuerte con los lag cercanos a 3.
 
 Podemos ver en la siguiente tabla de valores del ACF para las dos series.
 
