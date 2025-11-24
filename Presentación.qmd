@@ -1,26 +1,118 @@
 ---
-title: "Presentación"
-format: html
-editor: visual
+title: "Estudio exploratorio y modelado de la serie: Porcentaje de SO2 en el aire"
+format:
+  revealjs:
+    embed-resources: true
 ---
 
-## Quarto
+## Modelado
 
-Quarto enables you to weave together content and executable code into a finished document. To learn more about Quarto see <https://quarto.org>.
+Gracias a los resultados obtenidos, se ha propuesto los siguientes parámetros para el modelamiento:
 
-## Running Code
+-   **Guamani (Estación estacionaria por defecto)**
 
-When you click the **Render** button a document will be generated that includes both content and the output of embedded code. You can embed code like this:
+    -   Diferenciación ($d=0, D=0$)
 
-```{r}
-1 + 1
+    -   Componente Autoregresivo ($p=1, P=1$)
+
+    -   Estacionalidad (s=7)
+
+-   **Estaciones no estacionarias.**
+
+    -   Diferenciación ($d=1$)
+
+    -   Componente Autoregresivo ($p=1, P=1$)
+
+    -   Estacionalidad (s=7)
+
+```{r, echo=FALSE}
+# --- PASO 1: Modelos Manuales (Criterio del Investigador) ---
+
+# A. Para Guamaní (Estacionaria): SARIMA(1,0,0)(1,0,0)[7]
+fit_guamani <- datos_separados$entrenamiento |>
+  filter(ESTACION == "Guamani") |>
+  model(
+    Modelo_Propuesto = ARIMA(SO2 ~ pdq(1, 0, 0) + PDQ(1, 0, 0, period=7)),
+    Modelo_Automatico = ARIMA(SO2),
+    Modelo_SNAIVE    = SNAIVE(SO2 ~ lag(7)),
+    Modelo_Lineal    = TSLM(SO2 ~ trend() + season(period=7))
+  )
+
+# B. Para el Resto (No Estacionarias): SARIMA(1,1,0)(1,0,0)[7]
+fit_resto <- datos_separados$entrenamiento |>
+  filter(ESTACION != "Guamani") |>
+  model(
+    Modelo_Propuesto = ARIMA(SO2 ~ pdq(1, 1, 0) + PDQ(1, 0, 0, period = 7)),
+    Modelo_Automatico = ARIMA(SO2),
+    Modelo_SNAIVE    = SNAIVE(SO2 ~ lag(7)),
+    Modelo_Lineal    = TSLM(SO2 ~ trend() + season(period=7))
+  )
+
+
 ```
 
-You can add options to executable code like this
+## Implementación (AIC,BIC, Parsimonia)
 
-```{r}
-#| echo: false
-2 * 2
+```{r, echo=FALSE}
+glance_guamani <- glance(fit_guamani)
+glance_resto   <- glance(fit_resto)
+
+
+tabla_comparativa_1 <- bind_rows(glance_guamani, glance_resto) |>
+  filter(.model != "Modelo_SNAIVE") |>
+  select(ESTACION, MODELO = .model, AIC, AICc, BIC) |>
+  arrange(ESTACION, AICc)
+
+kable(tabla_comparativa_1, 
+      caption = "Comparación de Ajuste: Modelo Propuesto vs. Automáticos (Lineal, ARIMA automatico)",
+      digits = 2)
 ```
 
-The `echo: false` option disables the printing of code (only output is displayed).
+Alguna observación
+
+```{r, echo=FALSE}
+tabla_comparativa_2 <- accuracy(bind_rows(fit_guamani, fit_resto)) |>
+  select(ESTACION, Modelo = .model, RMSE, MAE) |>
+  arrange(ESTACION, RMSE)
+
+kable(tabla_comparativa_2, 
+      caption = "Comparación de Modelos por Precisión",
+      digits = 2)
+```
+
+Alguna observación
+
+Nuestros modelos serán:
+
+```{r, echo=FALSE}
+todos_los_modelos <- bind_rows(fit_guamani, fit_resto) 
+tabla_ordenes <- todos_los_modelos |>
+  as_tibble() |> 
+  pivot_longer(cols = c(Modelo_Propuesto, Modelo_Automatico), 
+               names_to = "Tipo_Modelo", 
+               values_to = "Objeto_Modelo") |>
+  mutate(Descripcion = format(Objeto_Modelo)) |> 
+  select(ESTACION, Tipo_Modelo, Descripcion)
+
+kable(tabla_ordenes, caption = "Órdenes ARIMA (pdq)(PDQ)")
+```
+
+## Significancia y estimaciones
+
+```{r, echo=FALSE, warning=FALSE}
+##Maxima verosimilitud modelos anteriores
+#Estimaciones del mejor modelo de cada estacion
+coeficientes_mle <- bind_rows(fit_guamani, fit_resto) |>
+  select(-Modelo_Lineal)|>
+  tidy() 
+
+
+# Mostrar tabla
+kable(coeficientes_mle, caption = "Coeficientes Estimados (MLE) - Solo ARIMA")
+```
+
+## ACF residuos
+
+## Ljung Box
+
+## Heterocedasticidad (varianza depende del tiempo)
