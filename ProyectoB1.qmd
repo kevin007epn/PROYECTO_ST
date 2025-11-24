@@ -295,7 +295,6 @@ Entonces basta con la diferencia de orden 1, para que nuestras series temporales
 
 ```{r, echo=FALSE, warning=FALSE}
 so2_ts |> 
-
   filter(ESTACION != "Guamani") |> 
   mutate(SO2_diff=difference(SO2)) |> 
   autoplot(SO2_diff) + 
@@ -310,9 +309,11 @@ Ahora, con nuestras series transformadas a series estacionarias, la información
 
 ```{r, echo=FALSE}
 so2_ts |> 
-  PACF(SO2) |> 
+  filter(ESTACION != "Guamani") |> 
+  mutate(SO2_diff=difference(SO2)) |> 
+  PACF(SO2_diff) |> 
   autoplot() + 
-  labs(title = "PACF de cantidad de SO2 por estación") +
+  labs(title = "PACF de cantidad de SO2 por estación diferenciada") +
   facet_wrap(vars(ESTACION), scales = "fixed", ncol = 2) +
   theme(legend.position = "none")
 
@@ -322,7 +323,9 @@ Por tanto, veamos los valores de la auto-correlación parcial con los distintos 
 
 ```{r , echo=FALSE}
 pacf_resultados_completos <- so2_ts |> 
-  PACF(SO2, lag_max = 200) |> 
+  filter(ESTACION != "Guamani") |> 
+  mutate(SO2_diff=difference(SO2)) |> 
+  PACF(SO2_diff, lag_max = 200) |> 
   as_tibble()
 
 
@@ -738,7 +741,7 @@ Ambos modelos presentan una naturaleza volátil y completa de la contaminación 
 ```{r}
 # Pronóstico a h pasos
 # Guamani
-h <- 6
+h <- 6*7
 
 fc1_guamani <- fit_guamani |>
   forecast(h=h)
@@ -751,7 +754,7 @@ fc1_guamani |>
   autoplot(so2_ts |> 
              filter(ESTACION == "Guamani", 
                     yearmonth(FECHA) >= yearmonth("2018-01") &
-                      yearmonth(FECHA) <= yearmonth("2018-01")), 
+                      yearmonth(FECHA) <= yearmonth("2018-02")), 
            level = NULL
   ) +
   labs(
@@ -768,7 +771,7 @@ fc1_resto |>
   filter(ESTACION == "Belisario") |>
   autoplot(serie[[1]] |> 
              filter(yearmonth(FECHA) >= yearmonth("2016-03") &
-                      yearmonth(FECHA) <= yearmonth("2016-03")), 
+                      yearmonth(FECHA) <= yearmonth("2016-04")), 
            level = NULL
   ) +
   labs(
@@ -785,7 +788,7 @@ fc1_resto |>
   filter(ESTACION == "Carapungo") |>
   autoplot(serie[[2]] |> 
              filter(yearmonth(FECHA) >= yearmonth("2016-03") &
-                      yearmonth(FECHA) <= yearmonth("2016-04")), 
+                      yearmonth(FECHA) <= yearmonth("2016-05")), 
            level = NULL
   ) +
   labs(
@@ -802,7 +805,7 @@ fc1_resto |>
   filter(ESTACION == "Cotocollao") |>
   autoplot(serie[[3]] |> 
              filter(yearmonth(FECHA) >= yearmonth("2016-03") &
-                      yearmonth(FECHA) <= yearmonth("2016-04")), 
+                      yearmonth(FECHA) <= yearmonth("2016-05")), 
            level = NULL
   ) +
   labs(
@@ -819,7 +822,7 @@ fc1_resto |>
   filter(ESTACION == "Tumbaco") |>
   autoplot(serie[[4]] |> 
              filter(yearmonth(FECHA) >= yearmonth("2017-01") &
-                      yearmonth(FECHA) <= yearmonth("2017-01")), 
+                      yearmonth(FECHA) <= yearmonth("2017-02")), 
            level = NULL
   ) +
   labs(
@@ -836,7 +839,7 @@ fc1_resto |>
   filter(ESTACION == "Los Chillos") |>
   autoplot(serie[[5]] |> 
              filter(yearmonth(FECHA) >= yearmonth("2017-10") &
-                      yearmonth(FECHA) <= yearmonth("2017-10")), 
+                      yearmonth(FECHA) <= yearmonth("2017-11")), 
            level = NULL
   ) +
   labs(
