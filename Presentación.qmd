@@ -5,44 +5,264 @@ format:
     embed-resources: true
 ---
 
+## Contexto
+
+-   El azufre atrapado en **combustibles fósiles, industrias metalurgicas, refinerias, termoelectricas o en el magma volcánico** se libera a la atmósfera como gas $SO_2$ tras la combustión o erupción.
+
+-   El $SO_2$ impacta negativamente en el sistema respiratorio provocando tos, secreción mucosa, agravamiento del asma y bronquitis crónica; y en el sistema cardiovascular.
+
+-   Provoca daño a la vegetación (clorosis) y la corrosión de materiales.
+
+![](images/clipboard-3256375208.jpeg){width="498"}
+
+```{r, echo=FALSE, include=FALSE}
+#Librerías
+library(tsibble)
+library(dplyr)
+library(lubridate)
+library(fpp3)
+library(tidyverse)
+library(leaflet)
+library(zoo)
+library(fable)
+library(imputeTS)
+library(ggplot2)
+library(tidyr)
+library(stringr)
+library(patchwork)
+library(feasts)
+library(knitr)
+library(leaflet)
+ruta<-"maate_concentracionso2_2021diciembre.csv"
+```
+
+\##<https://mapcarta.com/es/19666194>\## Fuente de las locaciones
+
+**Sectores de medicion de SO2**
+
+```{r}
+# 1. Definir coordenadas centrales de los sectores
+ubicaciones_sectores <- data.frame(
+  SECTOR = c("Belisario", "Carapungo", "Centro Histórico", "Cotocollao", 
+             "El Camal", "Guamani", "Los Chillos", "Tumbaco"),
+  LAT = c(-0.18994, -0.2544, -0.22365, -0.11475, 
+          -0.2494, -0.32894, -0.26667, -0.21226),
+  LON = c(-78.50727, -78.54411, -78.51559, -78.49775,
+          -78.51975, -78.5596, -78.48333, -78.4045)
+)
+
+# 2. Crear Mapa de Áreas
+leaflet() |>
+  addTiles() |> # Mapa base (Calles)
+  # CAPA 1: Áreas de los Sectores 
+  addCircles(data = ubicaciones_sectores,
+             lng = ~LON, lat = ~LAT,
+             radius = 2000, # Radio en metros (2 km)
+             color = "red",       # Color del borde
+             fillColor = "red",   # Color de relleno
+             fillOpacity = 0.2,   # Transparencia (para ver el mapa debajo)
+             popup = ~paste("Sector:", SECTOR),
+             group = "Sectores (Áreas)") |>
+  addLayersControl(
+    overlayGroups = c("Sectores (Áreas)", "Mis Puntos"),
+    options = layersControlOptions(collapsed = FALSE)
+  )
+```
+
+```{r, echo=FALSE, warning=FALSE}
+datos_so2 <- read.csv(ruta, sep = ";")
+head(datos_so2)
+datos_so2 <- datos_so2 |>  mutate(FECHA=dmy(paste(DIA, MES, ANIO)))
+
+so2_diario <- datos_so2 |> 
+  mutate(SO2 = as.numeric(SO2)) 
+
+
+```
+
+```{r warning=FALSE, include=FALSE}
+
+vector_estaciones <- c("Belisario", "Carapungo", "Cotocollao", "Tumbaco","Los Chillos","Guamani")
+
+so2_ts <- so2_diario |> 
+    filter(!is.na(SO2)) |> 
+    filter(PROV == "Pichincha", ESTACION %in% vector_estaciones) |> 
+    select(FECHA, ESTACION, SO2) |> 
+    as_tsibble(index = FECHA, key = ESTACION) |> 
+    fill_gaps() |> 
+    mutate(SO2 = imputeTS::na_seadec(SO2, algorithm = "interpolation", 
+                                     find_frequency = TRUE))
+
+```
+
+Con la frecuencia diaria, pues, el SO2 al ser una sustancia muy volatil, es de interés saber los días que se alcanzan los máximos durante el año. Además que el SO2 suele estar ligado a la actividad humana, entonces, la medición diaria del SO2 tiene la capacidad de mostrar patrones cruciales. (REFERENCIA)
+
+### Diversidad de las series de interés
+
+#### Tendencia
+
+```{r, echo=FALSE}
+
+so2_ts |> 
+  autoplot(SO2) +
+  labs(title = "Estaciones", x="Tiempo") +
+  facet_wrap(vars(ESTACION), scales = "free_y", ncol = 2) +
+  theme(legend.position = "none")
+
+```
+
+Probamos el Test de KPSS para determinar si las series son o no estacionarias:
+
+```{r, echo=FALSE}
+test_kpss_todos <- so2_ts |> 
+  features(SO2, unitroot_kpss)
+
+tabla_kpss <- test_kpss_todos |> 
+  filter(ESTACION %in% vector_estaciones)
+
+kable(
+  tabla_kpss,
+  caption = "Resultados de la Prueba KPSS", 
+  col.names = c("Fuente", "Estadístico", "Valor P"),
+  digits = 4
+)                                 
+```
+
+En todos los casos, se rechaza la idea que las series sean estacionarias pues, el *p-value* es menor o igual a 0.01, a excepción de Guamani, que resulta ser estacionaria.
+
+Aplicamos el test KPSS para determinar el orden de diferenciación para llevar a las series a ser estacionarias.
+
+```{r, echo=FALSE}
+
+ordenes_diff <- so2_ts |> 
+  features(SO2, unitroot_ndiffs)
+
+tabla_ordenes <- ordenes_diff |> 
+  filter(ESTACION %in% vector_estaciones)
+
+
+kable(
+  tabla_ordenes,
+  caption = "**Órdenes de Diferenciación Requeridas (ndiffs)**",
+  col.names = c("Serie", "Orden (d)"), 
+  digits = 0
+)
+```
+
+Basta con la diferencia de orden 1 para que las series sean estacionarias
+
+```{r, echo=FALSE, warning=FALSE}
+so2_ts |> 
+  filter(ESTACION != "Guamani") |> 
+  mutate(SO2_diff=difference(SO2)) |> 
+  autoplot(SO2_diff) + 
+  labs(title = "Serie diferenciada: \n Cantidad de SO2 por estación (Guamani Excluido)") + 
+  facet_wrap(vars(ESTACION), scales = "free_y", ncol = 2) + 
+  theme(legend.position = "none")
+```
+
+Ahora, con nuestras series transformadas a series estacionarias, la información del ACF y PACF será de interés.
+
+#### ACF
+
+```{r, echo=FALSE}
+
+so2_ts |> 
+  filter(ESTACION == "Guamani") |> 
+  mutate(SO2_diff=difference(SO2, lag = 7)) |> 
+  ACF(SO2_diff) |>  
+  autoplot() + 
+  labs(title = "ACF de cantidad de SO2 en estación diferenciada Guamani") +
+  facet_wrap(vars(ESTACION), scales = "fixed", ncol = 2) +
+  theme(legend.position = "none")
+
+```
+
+
+```{r, echo=FALSE}
+
+so2_ts |> 
+  filter(ESTACION != "Guamani") |> 
+  mutate(SO2_diff=difference(difference(SO2), lag = 7)) |> 
+  ACF(SO2_diff) |> 
+  autoplot() + 
+  labs(title = "ACF de cantidad de SO2 por estación diferenciada (excepto Guamani)") +
+  facet_wrap(vars(ESTACION), scales = "fixed", ncol = 2) +
+  theme(legend.position = "none")
+
+```
+
+Los gráficos de la ACF, muestran que existe auto-correlación con lags pasados.
+
+#### PACF
+
+```{r, echo=FALSE}
+so2_ts |> 
+  filter(ESTACION == "Guamani") |>
+  mutate(SO2_diff=difference(SO2, lag = 7)) |> 
+  PACF(SO2_diff) |> 
+  autoplot() + 
+  labs(title = "PACF de cantidad de SO2 en estación diferenciada Guamani") +
+  facet_wrap(vars(ESTACION), scales = "fixed", ncol = 2) +
+  theme(legend.position = "none")
+
+```
+
+
+```{r, echo=FALSE}
+so2_ts |> 
+  filter(ESTACION != "Guamani") |> 
+  mutate(SO2_diff=difference(difference(SO2), lag = 7)) |> 
+  PACF(SO2_diff) |> 
+  autoplot() + 
+  labs(title = "PACF de cantidad de SO2 por estación diferenciada (excepto Guamani)") +
+  facet_wrap(vars(ESTACION), scales = "fixed", ncol = 2) +
+  theme(legend.position = "none")
+
+```
+
 ## Modelado
 
 Gracias a los resultados obtenidos, se ha propuesto los siguientes parámetros para el modelamiento:
 
 -   **Guamani (Estación estacionaria por defecto)**
 
-    -   Diferenciación ($d=0, D=0$)
+    -   Diferenciación ($d=0, D=1$)
 
-    -   Componente Autoregresivo ($p=1, P=1$)
+    -   Componente AR ($p=1, P=0$)
+    
+    -   Componente MA ($q=1, Q=1$)
 
     -   Estacionalidad (s=7)
 
 -   **Estaciones no estacionarias.**
 
-    -   Diferenciación ($d=1$)
+    -   Diferenciación ($d=1, D=1$)
 
-    -   Componente Autoregresivo ($p=1, P=1$)
+    -   Componente AR ($p=1, P=0$)
+    
+    -   Componente MA ($q=1, Q=1$)
 
     -   Estacionalidad (s=7)
 
 ```{r, echo=FALSE}
 # --- PASO 1: Modelos Manuales (Criterio del Investigador) ---
 
-# A. Para Guamaní (Estacionaria): SARIMA(1,0,0)(1,0,0)[7]
+# A. Para Guamaní (Estacionaria): SARIMA(1,0,1)(0,1,1)[7]
 fit_guamani <- datos_separados$entrenamiento |>
   filter(ESTACION == "Guamani") |>
   model(
-    Modelo_Propuesto = ARIMA(SO2 ~ pdq(1, 0, 0) + PDQ(1, 0, 0, period=7)),
+    Modelo_Propuesto = ARIMA(SO2 ~ pdq(1, 0, 1) + PDQ(0, 1, 1, period=7)),
     Modelo_Automatico = ARIMA(SO2),
     Modelo_SNAIVE    = SNAIVE(SO2 ~ lag(7)),
     Modelo_Lineal    = TSLM(SO2 ~ trend() + season(period=7))
   )
 
-# B. Para el Resto (No Estacionarias): SARIMA(1,1,0)(1,0,0)[7]
+# B. Para el Resto (No Estacionarias): SARIMA(1,1,1)(0,1,1)[7]
 fit_resto <- datos_separados$entrenamiento |>
   filter(ESTACION != "Guamani") |>
   model(
-    Modelo_Propuesto = ARIMA(SO2 ~ pdq(1, 1, 0) + PDQ(1, 0, 0, period = 7)),
+    Modelo_Propuesto = ARIMA(SO2 ~ pdq(1, 1, 1) + PDQ(0, 1, 1 period = 7)),
     Modelo_Automatico = ARIMA(SO2),
     Modelo_SNAIVE    = SNAIVE(SO2 ~ lag(7)),
     Modelo_Lineal    = TSLM(SO2 ~ trend() + season(period=7))
