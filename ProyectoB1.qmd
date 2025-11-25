@@ -418,21 +418,21 @@ $\text{Modelo Propuesto: } ARIMA(1,1,0)(1,0,0)[7]$
 ```{r}
 # --- PASO 1: Modelos Manuales (Criterio del Investigador) ---
 
-# A. Para Guamaní (Estacionaria): ARIMA(1,0,0)
+# A. Para Guamaní (Estacionaria): SARIMA(1,0,1)(0,1,1)[7]
 fit_guamani <- datos_separados$entrenamiento |>
   filter(ESTACION == "Guamani") |>
   model(
-    Modelo_Propuesto = ARIMA(SO2 ~ pdq(1, 0, 0) + PDQ(0, 0, 0)),
+    Modelo_Propuesto = ARIMA(SO2 ~ pdq(1, 0, 1) + PDQ(0, 1, 1)),
     Modelo_Automatico = ARIMA(SO2),
     Modelo_SNAIVE    = SNAIVE(SO2 ~ lag(7)),
     Modelo_Lineal    = TSLM(SO2 ~ trend() + season(period=7))
   )
 
-# B. Para el Resto (No Estacionarias): SARIMA(1,1,0)(1,0,0)[7]
+# B. Para el Resto (No Estacionarias): SARIMA(1,1,1)(0,1,1)[7]
 fit_resto <- datos_separados$entrenamiento |>
   filter(ESTACION != "Guamani") |>
   model(
-    Modelo_Propuesto = ARIMA(SO2 ~ pdq(1, 1, 0) + PDQ(1, 0, 0, period = 7)),
+    Modelo_Propuesto = ARIMA(SO2 ~ pdq(1, 1, 1) + PDQ(0, 1, 1)),
     Modelo_Automatico = ARIMA(SO2),
     Modelo_SNAIVE    = SNAIVE(SO2 ~ lag(7)),
     Modelo_Lineal    = TSLM(SO2 ~ trend() + season(period=7))
@@ -873,7 +873,7 @@ accuracy_guamani <- fc1_guamani |>
 # TSCV accuracy
 modelos_cv_guamani <- cv_guamani |>
   model(
-    CV_Propuesto = ARIMA(SO2 ~ pdq(1, 1, 0) + PDQ(1, 0, 0, period = 7)),
+    CV_Propuesto = ARIMA(SO2 ~ pdq(1, 0, 1) + PDQ(0, 1, 1, period = 7)),
     CV_Automatico = ARIMA(SO2),
     CV_SNAIVE    = SNAIVE(SO2 ~ lag(7)),
     CV_Lineal    = TSLM(SO2 ~ trend() + season(period=7))
@@ -910,7 +910,7 @@ accuracy_resto <- fc1_resto |>
 modelos_cv_resto <- cv_resto |>
   group_by(ESTACION) |>
   model(
-    CV_Propuesto = ARIMA(SO2 ~ pdq(1, 1, 0) + PDQ(1, 0, 0, period = 7)),
+    CV_Propuesto = ARIMA(SO2 ~ pdq(1, 1, 1) + PDQ(0, 1, 1, period = 7)),
     CV_Automatico = ARIMA(SO2),
     CV_SNAIVE    = SNAIVE(SO2 ~ lag(7)),
     CV_Lineal    = TSLM(SO2 ~ trend() + season(period=7))
@@ -933,12 +933,12 @@ accuracy_cv_total <- bind_rows(accuracy_cv_guamani, accuracy_cv_resto) |>
 accuracy_total <- bind_rows(accuracy_guamani, accuracy_resto) |> 
   bind_rows(accuracy_cv_total)
 
-# Seleccionar el mejor modelo por estación basado en MASE
+# Seleccionar el mejor modelo por estación basado en MAPE
 mejores_modelos <- accuracy_total |>
   group_by(ESTACION, .model) |>
-  summarise(MASE = mean(MASE), .groups = 'drop') |>
+  summarise(MAPE = mean(MAPE), .groups = 'drop') |>
   group_by(ESTACION) |>
-  slice_min(MASE, n = 1) |>
+  slice_min(MAPE, n = 1) |>
   ungroup()
 
 # Tabla resumen con el modelo ganador por estación
