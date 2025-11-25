@@ -97,7 +97,7 @@ so2_ts <- so2_diario |>
 
 Con la frecuencia diaria, pues, el SO2 al ser una sustancia muy volatil, es de interés saber los días que se alcanzan los máximos durante el año. Además que el SO2 suele estar ligado a la actividad humana, entonces, la medición diaria del SO2 tiene la capacidad de mostrar patrones cruciales. (REFERENCIA)
 
-### Diversidad de las series de interés
+## Diversidad de las series de interés
 
 #### Tendencia
 
@@ -178,7 +178,6 @@ so2_ts |>
 
 ```
 
-
 ```{r, echo=FALSE}
 
 so2_ts |> 
@@ -194,7 +193,7 @@ so2_ts |>
 
 Los gráficos de la ACF, muestran que existe auto-correlación con lags pasados.
 
-#### PACF
+## PACF
 
 ```{r, echo=FALSE}
 so2_ts |> 
@@ -207,7 +206,6 @@ so2_ts |>
   theme(legend.position = "none")
 
 ```
-
 
 ```{r, echo=FALSE}
 so2_ts |> 
@@ -230,7 +228,7 @@ Gracias a los resultados obtenidos, se ha propuesto los siguientes parámetros p
     -   Diferenciación ($d=0, D=1$)
 
     -   Componente AR ($p=1, P=0$)
-    
+
     -   Componente MA ($q=1, Q=1$)
 
     -   Estacionalidad (s=7)
@@ -240,29 +238,55 @@ Gracias a los resultados obtenidos, se ha propuesto los siguientes parámetros p
     -   Diferenciación ($d=1, D=1$)
 
     -   Componente AR ($p=1, P=0$)
-    
+
     -   Componente MA ($q=1, Q=1$)
 
     -   Estacionalidad (s=7)
 
-```{r, echo=FALSE}
+```{r, echo=FALSE, include=FALSE}
+separar_datos_entrenamiento_prueba <- function(tsibble_datos, prop_entrenamiento = 0.8) {
+
+  if (!inherits(tsibble_datos, "tbl_ts")) {
+    stop("La entrada debe ser un objeto tsibble.")
+  }
+
+  datos_entrenamiento <- tsibble_datos |>
+    group_by(ESTACION) |> 
+    slice_head(prop = prop_entrenamiento) |> 
+    ungroup()
+
+  datos_prueba <- tsibble_datos |>
+    group_by(ESTACION) |> 
+    slice_tail(prop = 1 - prop_entrenamiento) |> 
+    ungroup()
+
+  return(list(
+    entrenamiento = datos_entrenamiento,
+    prueba = datos_prueba
+  ))
+}
+
+datos_separados <- separar_datos_entrenamiento_prueba(so2_ts)
+```
+
+```{r, echo=FALSE, warning=FALSE}
 # --- PASO 1: Modelos Manuales (Criterio del Investigador) ---
 
 # A. Para Guamaní (Estacionaria): SARIMA(1,0,1)(0,1,1)[7]
 fit_guamani <- datos_separados$entrenamiento |>
   filter(ESTACION == "Guamani") |>
   model(
-    Modelo_Propuesto = ARIMA(SO2 ~ pdq(1, 0, 1) + PDQ(0, 1, 1, period=7)),
+    Modelo_Propuesto = ARIMA(SO2 ~ pdq(1, 0, 1) + PDQ(0, 0, 1, period = 7)), 
     Modelo_Automatico = ARIMA(SO2),
-    Modelo_SNAIVE    = SNAIVE(SO2 ~ lag(7)),
-    Modelo_Lineal    = TSLM(SO2 ~ trend() + season(period=7))
+    Modelo_SNAIVE     = SNAIVE(SO2 ~ lag(7)),
+    Modelo_Lineal     = TSLM(SO2 ~ trend() + season(period=7))
   )
 
 # B. Para el Resto (No Estacionarias): SARIMA(1,1,1)(0,1,1)[7]
 fit_resto <- datos_separados$entrenamiento |>
   filter(ESTACION != "Guamani") |>
   model(
-    Modelo_Propuesto = ARIMA(SO2 ~ pdq(1, 1, 1) + PDQ(0, 1, 1 period = 7)),
+    Modelo_Propuesto = ARIMA(SO2 ~ pdq(1, 1, 1) + PDQ(0, 1, 1, period = 7)),
     Modelo_Automatico = ARIMA(SO2),
     Modelo_SNAIVE    = SNAIVE(SO2 ~ lag(7)),
     Modelo_Lineal    = TSLM(SO2 ~ trend() + season(period=7))
@@ -333,6 +357,119 @@ kable(coeficientes_mle, caption = "Coeficientes Estimados (MLE) - Solo ARIMA")
 
 ## ACF residuos
 
+```{r, echo=FALSE}
+library(patchwork) # Necesaria para unir gráficos
+
+# 1. Guardamos el Gráfico del Modelo Propuesto en un objeto (g1)
+g1 <- modelos_finales |>
+  select(Modelo_Propuesto) |> 
+  augment() |>
+  filter(!is.na(.innov)) |> 
+  ACF(.innov, lag_max = 10) |> 
+  autoplot() +
+  labs(title = "Modelo Propuesto", 
+       y = "ACF", x = "Lag") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+# 2. Guardamos el Gráfico del Modelo Automático en un objeto (g2)
+g2 <- modelos_finales |>
+  select(Modelo_Automatico) |> 
+  augment() |>
+  filter(!is.na(.innov)) |> # Agregué esto por seguridad
+  ACF(.innov, lag_max = 10) |> 
+  autoplot() +
+  labs(title = "Modelo Automático", 
+       y = "ACF", x = "Lag") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+# 3. Juntamos los dos (Lado a Lado)
+# Usamos "|" para ponerlos uno al lado del otro
+# Usamos plot_annotation para un título general
+g1 | g2 + plot_annotation(title = "Comparación de Residuos (ACF): Propuesto vs. Automático")
+```
+
+En Cotocollao, Belisario y Carapungo, notamos que existe una autocorrelación significativa con el rezago 2, lo que podría sugerir la inclusión de un modelo (MA)
+
 ## Ljung Box
 
+$H_0$ Residuos Independientes
+
+```{r, echo=FALSE}
+
+library(dplyr)
+library(gt) # O kable si prefieres
+
+# 1. Calcular datos Propuesto
+datos_prop <- modelos_finales |>
+  select(Modelo_Propuesto) |> augment() |>
+  features(.innov, ljung_box, lag = 14, dof = 2) |>
+  select(ESTACION, Q_Manual = lb_stat, P_Manual = lb_pvalue)
+
+# 2. Calcular datos Automático
+datos_auto <- modelos_finales |>
+  select(Modelo_Automatico) |> augment() |>
+  features(.innov, ljung_box, lag = 14, dof = 2) |>
+  select(ESTACION, Q_Auto = lb_stat, P_Auto = lb_pvalue)
+
+# 3. Unir y mostrar en una sola tabla elegante
+left_join(datos_prop, datos_auto, by = "ESTACION") |>
+  gt() |>
+  tab_header(
+    title = "Comparación de Independencia de Residuos (Ljung-Box)",
+    subtitle = "Comparativa: Modelo Manual vs. Automático"
+  ) |>
+  tab_spanner(
+    label = "Modelo Propuesto",
+    columns = c(Q_Manual, P_Manual)
+  ) |>
+  tab_spanner(
+    label = "Modelo Automático",
+    columns = c(Q_Auto, P_Auto)
+  ) |>
+  fmt_number(columns = -ESTACION, decimals = 4) |>
+  tab_style(
+    style = cell_text(color = "red", weight = "bold"),
+    locations = cells_body(
+      columns = c(P_Manual, P_Auto),
+      rows = P_Manual < 0.05 | P_Auto < 0.05
+    )
+  )
+```
+
+El modelo automático para los Chillos es la que más limpia está, no es afectada por residuos.
+
+En ambos modelos, en Belisario se rechaza la Hipotesis que los residuos sean independientes.
+
 ## Heterocedasticidad (varianza depende del tiempo)
+
+```{r, echo=FALSE}
+#método de Volatilidad de los residuos^2
+modelos_finales |>
+  select(Modelo_Propuesto) |>
+  augment() |>
+  mutate(residuos_sq = .innov^2) |> # Elevamos al cuadrado
+  ggplot(aes(x = FECHA, y = residuos_sq)) +
+  geom_line() +
+  facet_wrap(~ESTACION, scales = "free_y", ncol = 2) +
+  labs(title = "Heterocedasticidad: Residuos al Cuadrado",
+       subtitle = "Picos altos indican agrupamiento de volatilidad (ARCH effects)",
+       y = "Residuos al Cuadrado", x = "Tiempo") +
+  theme_minimal()
+```
+
+```{r, echo=FALSE}
+#método de Volatilidad de los residuos^2
+modelos_finales |>
+  select(Modelo_Automatico) |>
+  augment() |>
+  mutate(residuos_sq = .innov^2) |> # Elevamos al cuadrado
+  ggplot(aes(x = FECHA, y = residuos_sq)) +
+  geom_line() +
+  facet_wrap(~ESTACION, scales = "free_y", ncol = 2) +
+  labs(title = "Heterocedasticidad: Residuos al Cuadrado",
+       subtitle = "Picos altos indican agrupamiento de volatilidad (ARCH effects)",
+       y = "Residuos al Cuadrado", x = "Tiempo") +
+  theme_minimal()
+```
