@@ -2,7 +2,15 @@
 title: "Estudio exploratorio y modelado de la serie: Porcentaje de SO2 en el aire"
 format:
   revealjs:
+    theme: simple
+    transition: slide
+    slide-number: true
     embed-resources: true
+    width: 1280
+    height: 720
+    center: false         
+    margin: 0.05          
+    fig-align: center      
 ---
 
 ## Contexto
@@ -14,6 +22,8 @@ format:
 -   Provoca daño a la vegetación (clorosis) y la corrosión de materiales.
 
 ![](images/clipboard-3256375208.jpeg){width="498"}
+
+## Sectores de medición de SO2
 
 ```{r, echo=FALSE, include=FALSE}
 #Librerías
@@ -111,6 +121,8 @@ so2_ts |>
 
 ```
 
+## Test KPSS
+
 Probamos el Test de KPSS para determinar si las series son o no estacionarias:
 
 ```{r, echo=FALSE}
@@ -129,6 +141,8 @@ kable(
 ```
 
 En todos los casos, se rechaza la idea que las series sean estacionarias pues, el *p-value* es menor o igual a 0.01, a excepción de Guamani, que resulta ser estacionaria.
+
+## Ordenes de diferenciación
 
 Aplicamos el test KPSS para determinar el orden de diferenciación para llevar a las series a ser estacionarias.
 
@@ -151,6 +165,8 @@ kable(
 
 Basta con la diferencia de orden 1 para que las series sean estacionarias
 
+## Series Diferenciadas
+
 ```{r, echo=FALSE, warning=FALSE}
 so2_ts |> 
   filter(ESTACION != "Guamani") |> 
@@ -163,18 +179,22 @@ so2_ts |>
 
 Ahora, con nuestras series transformadas a series estacionarias, la información del ACF y PACF será de interés.
 
-#### ACF
+## ACF
 
 ```{r, echo=FALSE}
-
-so2_ts |> 
+library(patchwork) 
+p1 <- so2_ts |> 
   filter(ESTACION == "Guamani") |> 
-  mutate(SO2_diff=difference(SO2, lag = 7)) |> 
-  ACF(SO2_diff) |>  
+  mutate(SO2_diff = difference(SO2, lag = 7)) |> 
+  ACF(SO2_diff, lag_max = 28) |> 
   autoplot() + 
-  labs(title = "ACF de cantidad de SO2 en estación diferenciada Guamani") +
-  facet_wrap(vars(ESTACION), scales = "fixed", ncol = 2) +
-  theme(legend.position = "none")
+  scale_x_continuous(breaks = seq(0, 28, by = 7)) +
+  geom_vline(xintercept = c(7, 14, 21, 28), linetype = "dotted", color = "red", alpha = 0.5) +
+  labs(title = "Estación Guamaní (Lag 7)", x = NULL) + # Quitamos x para no repetir
+  theme_minimal()
+
+p1 
+
 
 ```
 
@@ -182,12 +202,25 @@ so2_ts |>
 
 so2_ts |> 
   filter(ESTACION != "Guamani") |> 
-  mutate(SO2_diff=difference(difference(SO2), lag = 7)) |> 
-  ACF(SO2_diff) |> 
+  mutate(SO2_diff = difference(difference(SO2), lag = 7)) |> 
+  ACF(SO2_diff, lag_max = 28) |> 
   autoplot() + 
-  labs(title = "ACF de cantidad de SO2 por estación diferenciada (excepto Guamani)") +
-  facet_wrap(vars(ESTACION), scales = "fixed", ncol = 2) +
-  theme(legend.position = "none")
+  scale_x_continuous(breaks = seq(0, 28, by = 7), minor_breaks = NULL) +
+  geom_vline(xintercept = c(7, 14, 21, 28), linetype = "dotted", color = "red", alpha = 0.5) +
+  labs(
+    title = "Autocorrelación (ACF): Resto de Estaciones",
+    subtitle = "Doble diferenciación (lag=1 y lag=7)",
+    y = "ACF",
+    x = "Retardo (Días)"
+  ) +
+  
+  facet_wrap(vars(ESTACION), ncol = 2, scales = "fixed") + 
+  theme_light() +
+  theme(
+    legend.position = "none",
+    strip.background = element_rect(fill = "#2C3E50"), # Un color más corporativo/oscuro para los encabezados
+    strip.text = element_text(color = "white")
+  )
 
 ```
 
@@ -266,7 +299,7 @@ separar_datos_entrenamiento_prueba <- function(tsibble_datos, prop_entrenamiento
   ))
 }
 
-datos_separados <- separar_datos_entrenamiento_prueba(so2_ts)
+datos_separados <-separar_datos_entrenamiento_prueba(so2_ts)
 ```
 
 ```{r, echo=FALSE, warning=FALSE}
@@ -299,20 +332,24 @@ fit_resto <- datos_separados$entrenamiento |>
 
 ```{r, echo=FALSE}
 glance_guamani <- glance(fit_guamani)
+
 glance_resto   <- glance(fit_resto)
-
-
 tabla_comparativa_1 <- bind_rows(glance_guamani, glance_resto) |>
   filter(.model != "Modelo_SNAIVE") |>
   select(ESTACION, MODELO = .model, AIC, AICc, BIC) |>
   arrange(ESTACION, AICc)
-
 kable(tabla_comparativa_1, 
       caption = "Comparación de Ajuste: Modelo Propuesto vs. Automáticos (Lineal, ARIMA automatico)",
       digits = 2)
 ```
 
-Alguna observación
+En rasgos generales, el mejor modelo es el Lineal por tener los valores más bajos de AICm AICc y BIC.
+
+Comparando los modelos: Propuesto y Automático
+
+-   Son muy similares según los ajustes de AIC, AICc y BIC
+
+-   Ambos modelos tratan de capturar la misma dinámica y convergen a resultados parecidos
 
 ```{r, echo=FALSE}
 tabla_comparativa_2 <- accuracy(bind_rows(fit_guamani, fit_resto)) |>
@@ -324,7 +361,15 @@ kable(tabla_comparativa_2,
       digits = 2)
 ```
 
-Alguna observación
+Aunque el lineal tiene el mejor AIC, su predicción es peor que los modelos ARIMA (propuesto y Automático)
+
+/////Para la expo
+
+Aunque los criterios de información (AIC) favorecían modelos más simples, la validación cruzada (RMSE) demuestra que los modelos ARIMA (Propuesto y Automático) tienen un error de pronóstico significativamente menor
+
+"Dado que el **Modelo Propuesto** tiene un rendimiento muy similar (y a veces superior) al Automático, y además es un modelo que nosotros hemos parametrizado y entendemos teóricamente, lo seleccionamos como el modelo final para las proyecciones."
+
+/////
 
 Nuestros modelos serán:
 
@@ -356,6 +401,11 @@ kable(coeficientes_mle, caption = "Coeficientes Estimados (MLE) - Solo ARIMA")
 ```
 
 ## ACF residuos
+
+```{r, echo=FALSE, warning=FALSE}
+#Unificación de modelos para diagnóstico masivo
+modelos_finales <- bind_rows(fit_guamani, fit_resto)
+```
 
 ```{r, echo=FALSE}
 library(patchwork) # Necesaria para unir gráficos
@@ -459,17 +509,16 @@ modelos_finales |>
   theme_minimal()
 ```
 
-```{r, echo=FALSE}
-#método de Volatilidad de los residuos^2
-modelos_finales |>
-  select(Modelo_Automatico) |>
-  augment() |>
-  mutate(residuos_sq = .innov^2) |> # Elevamos al cuadrado
-  ggplot(aes(x = FECHA, y = residuos_sq)) +
-  geom_line() +
-  facet_wrap(~ESTACION, scales = "free_y", ncol = 2) +
-  labs(title = "Heterocedasticidad: Residuos al Cuadrado",
-       subtitle = "Picos altos indican agrupamiento de volatilidad (ARCH effects)",
-       y = "Residuos al Cuadrado", x = "Tiempo") +
-  theme_minimal()
-```
+El análisis de residuos al cuadrado muestra que la varianza del error no es constante. Existen periodos de alta volatilidad (agrupamiento), especialmente visibles en la estación **Tumbaco**. Además, se observan valores atípicos extremos al inicio de los registros en Belisario y Carapungo.
+
+///// Para nosotros
+
+-   **Carapungo** llega a **3000** (Error altísimo).
+
+-   **Guamaní** apenas llega a **200** (Error bajo).
+
+-   **Tumbaco** llega a **150**.
+
+-   Esto confirma que el modelo se ajusta mucho mejor a Guamaní que a Carapungo (donde los errores al cuadrado son enormes).
+
+/////
