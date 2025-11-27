@@ -441,7 +441,7 @@ g2 <- modelos_finales |>
 g1 | g2 + plot_annotation(title = "Comparación de Residuos (ACF): Propuesto vs. Automático")
 ```
 
-En Cotocollao, Belisario y Carapungo, notamos que existe una autocorrelación significativa con el rezago 2, lo que podría sugerir la inclusión de un modelo (MA)
+En Cotocollao y Carapungo, notamos que existe una autocorrelación significativa con el rezago 2, lo que podría sugerir la inclusión de un modelo (MA)
 
 ## Ljung Box
 
@@ -491,8 +491,6 @@ left_join(datos_prop, datos_auto, by = "ESTACION") |>
 
 El modelo automático para los Chillos es la que más limpia está, no es afectada por residuos.
 
-En ambos modelos, en Belisario se rechaza la Hipotesis que los residuos sean independientes.
-
 ## Heterocedasticidad (varianza depende del tiempo)
 
 ```{r, echo=FALSE}
@@ -510,7 +508,7 @@ modelos_finales |>
   theme_minimal()
 ```
 
-El análisis de residuos al cuadrado muestra que la varianza del error no es constante. Existen periodos de alta volatilidad (agrupamiento), especialmente visibles en la estación **Tumbaco**. Además, se observan valores atípicos extremos al inicio de los registros en Belisario y Carapungo.
+El análisis de residuos al cuadrado muestra que la varianza del error no es constante. Existen periodos de alta volatilidad (agrupamiento), especialmente visibles en la estación **Tumbaco**. Además, se observan valores atípicos extremos al inicio de los registros en Carapungo.
 
 ///// Para nosotros
 
@@ -523,3 +521,196 @@ El análisis de residuos al cuadrado muestra que la varianza del error no es con
 -   Esto confirma que el modelo se ajusta mucho mejor a Guamaní que a Carapungo (donde los errores al cuadrado son enormes).
 
 /////
+
+## Estabilidad
+
+```{r, echo=FALSE, warning=FALSE}
+
+modelos_finales |>
+  select(Modelo_Propuesto) |> 
+  gg_arma() +
+  labs(title = "Verificación de Estabilidad: Raíces Inversas del Modelo",
+       subtitle = "Los puntos deben estar DENTRO del círculo para ser estables",
+       y = "Parte Imaginaria", 
+       x = "Parte Real") +
+  theme_minimal()
+
+todos_los_modelos <- bind_rows(fit_guamani, fit_resto) 
+tabla_ordenes <- todos_los_modelos |>
+  as_tibble() |> 
+  pivot_longer(cols = c(Modelo_Propuesto), 
+               names_to = "Tipo_Modelo", 
+               values_to = "Objeto_Modelo") |>
+  mutate(Descripcion = format(Objeto_Modelo)) |> 
+  select(ESTACION, Tipo_Modelo, Descripcion)
+
+kable(tabla_ordenes, caption = "Órdenes ARIMA (pdq)(PDQ)")
+```
+
+## Pronosticos
+
+```{r}
+h <- 6*7
+fc1_guamani <- fit_guamani |>
+  forecast(h=h)
+# Resto
+fc1_resto <- fit_resto |> 
+  forecast(h=h)
+fc1_guamani |>
+  autoplot(so2_ts |> 
+             filter(ESTACION == "Guamani", 
+                    yearmonth(FECHA) >= yearmonth("2018-01") &
+                      yearmonth(FECHA) <= yearmonth("2018-02")), 
+           level = NULL
+  ) +
+  labs(
+    x = "2018", y = "SO2 HG/m^3",
+    title = "Pronósticos de la cantidad de S02 en Guamani"
+  ) +
+  guides(colour = guide_legend(title = "Modelos"))
+```
+
+```{r}
+# Camal
+fc1_resto |> 
+  filter(ESTACION == "El Camal") |>
+  autoplot(so2_ts |> 
+             filter(ESTACION == "El Camal", 
+                    yearmonth(FECHA) >= yearmonth("2016-01") & 
+                    yearmonth(FECHA) <= yearmonth("2016-04")),
+           level = NULL
+  ) +
+  labs(
+    x = "2018", 
+    y = "Concentración SO2",
+    title = "Pronósticos SO2: El Camal"
+  ) +
+  guides(colour = guide_legend(title = "Modelos"))
+```
+
+```{r}
+# Carapungo
+fc1_resto |> 
+  filter(ESTACION == "Carapungo") |>
+  autoplot(so2_ts |> 
+             filter(yearmonth(FECHA) >= yearmonth("2016-03") &
+                      yearmonth(FECHA) <= yearmonth("2016-05")), 
+           level = NULL
+  ) +
+  labs(
+    x = "2016", y = "SO2 HG/m^3",
+    title = "Pronósticos de la cantidad de S02 en Carapungo"
+  ) +
+  guides(colour = guide_legend(title = "Modelos"))
+
+```
+
+```{r}
+# Cotocollao
+fc1_resto |> 
+  filter(ESTACION == "Cotocollao") |>
+  autoplot(so2_ts |> 
+             filter(yearmonth(FECHA) >= yearmonth("2016-03") &
+                      yearmonth(FECHA) <= yearmonth("2016-05")), 
+           level = NULL
+  ) +
+  labs(
+    x = "2016", y = "SO2 HG/m^3",
+    title = "Pronósticos de la cantidad de S02 en Cotocollao"
+  ) +
+  guides(colour = guide_legend(title = "Modelos"))
+```
+
+```{r}
+# Tumbaco
+fc1_resto |> 
+  filter(ESTACION == "Tumbaco") |>
+  autoplot(so2_ts |> 
+             filter(yearmonth(FECHA) >= yearmonth("2017-01") &
+                      yearmonth(FECHA) <= yearmonth("2017-02")), 
+           level = NULL
+  ) +
+  labs(
+    x = "2017", y = "SO2 HG/m^3",
+    title = "Pronósticos de la cantidad de S02 en Tumbaco"
+  ) +
+  guides(colour = guide_legend(title = "Modelos"))
+```
+
+```{r}
+# Los Chillos
+fc1_resto |> 
+  filter(ESTACION == "Los Chillos") |>
+  autoplot(so2_ts |> 
+             filter(yearmonth(FECHA) >= yearmonth("2017-10") &
+                      yearmonth(FECHA) <= yearmonth("2017-11")), 
+           level = NULL
+  ) +
+  labs(
+    x = "2017", y = "SO2 HG/m^3",
+    title = "Pronósticos de la cantidad de S02 en Los Chillos"
+  ) +
+  guides(colour = guide_legend(title = "Modelos"))
+```
+
+## Mejor modelo
+
+```{r}
+todos_modelos <- bind_rows(fit_guamani, fit_resto)
+metricas_rmse <- accuracy(todos_modelos) |> 
+  select(ESTACION, .model, RMSE)
+metricas_aic <- glance(todos_modelos) |> 
+  select(ESTACION, .model, AIC)
+tabla_mejores <- metricas_rmse |>
+  left_join(metricas_aic, by = c("ESTACION", ".model")) |>
+  group_by(ESTACION) |>
+  slice_min(order_by = RMSE, n = 1) |> 
+  select(ESTACION, Mejor_Modelo = .model, RMSE, AIC) |>
+  arrange(RMSE)
+
+kable(tabla_mejores, 
+      caption = "Mejor Modelo por Estación (Criterio: Mínimo RMSE)",
+      digits = 2)
+```
+
+## Discusion
+
+```{r}
+coeficientes_propuestos <- bind_rows(fit_guamani, fit_resto) |>
+  select(ESTACION, Modelo_Propuesto) |> # Seleccionamos solo el modelo manual
+  tidy() |> 
+  select(ESTACION, Termino = term, Estimacion = estimate, Error_Std = std.error, P_Valor = p.value)
+
+kable(coeficientes_propuestos, 
+      caption = "Coeficientes de los Modelos Propuestos (ARIMA Manual)",
+      digits = 4)
+
+```
+
+##### Componente Autorregresivo (AR): "Memoria"
+
+Para las estaciones Camal, Carapungo, Los Chillos y Tumbaco, Estas estaciones presentan un coeficiente AR(1) positivo y significativo, lo que denota una alta persistencia de la contaminación. Esto sugiere que las condiciones meteorológicas en estos sectores no favorecen una dispersión inmediata, generando episodios de alta concentración tienden a durar varios días.
+
+A diferencia del resto, Cotocollao muestra un comportamiento de oscilatorio. Esto implica que la atmósfera en este sector tiene una dinámica más volátil, posiblemente debido a vientos locales que evitan la acumulación sostenida del contaminante de un día para otro.
+
+Se confirma una fuerte dependencia temporal (alta memoria). Físicamente, esto se interpreta como una zona de baja capacidad dispersiva, donde el $SO_2$​ se acumula y queda atrapado, probablemente debido a la topografía del sur de Quito o a fuentes de emisión constantes sin ventilación adecuada.
+
+##### Componente de Media Móvil (MA): "Persistencia"
+
+Los coeficientes negativos implican la dispersion de SO2 en las zonas correspondientes, muchas concentraciones de SO2 son desplazadas diariamente a traves de vientos fuertes o por las nubes que las arrastran para generar las lluvias acidas.
+
+El signo negativo en el coeficiente MA indica un mecanismo de corrección rápida. Físicamente, esto sugiere que estas zonas están expuestas a dinámicas de ventilación activa (vientos fuertes o turbulencia) o lavado atmosférico (lluvia). Cuando ocurre un incremento abrupto de SO2​ (un choque), este no persiste, sino que es dispersado eficazmente, haciendo que los niveles retornen rápidamente (o incluso caigan por debajo) de la media al día siguiente. El sistema 'castiga' los excesos inmediatos.
+
+Por el contrario, Cotocollao presenta un coeficiente positivo, lo que implica una persistencia del choque. En este sector, los eventos inesperados de contaminación no se disipan inmediatamente, sino que se 'arrastran' parcialmente al día siguiente. Esto denota una menor capacidad de ventilación inmediata ante eventos puntuales, permitiendo que los remanentes de contaminación permanezcan en el aire por más tiempo.
+
+##### Residuos: "Ruido"
+
+Los residuos del modelo representan la componente no sistemática de la concentración de $SO2$​. En el contexto de Quito, se interpreta que este componente almacena la información de variables meteorológicas dinámicas (viento, precipitación) y eventos de emisión discretos que no siguen un patrón calendario fijo. El hecho de que los residuos se aproximen a ruido blanco (sin autocorrelación) indica la naturaleza caótica e impredecible de la atmósfera urbana.
+
+#### Conclusión del desempeño
+
+Los modelos ARIMA superaron en precisión (menor RMSE) tanto a la regresión lineal (TSLM) como al método ingenuo (SNAIVE), demostrando que la concentración de $SO2$​ obedece a una dinámica estocástica compleja y no a patrones deterministas simples. El ajuste de la media fue satisfactorio, logrando residuos sin autocorrelación.
+
+#### Limitaciones y posibles extenciones
+
+Los modelos ARIMA ignoran variables meteorológicas críticas (viento, lluvia) que limpian o dispersan el contaminante, limitando la predicción de cambios bruscos. Se siguen posibles implementaciones de modelos ARIMAX para incluir forzantes meteorológicos, o modelos híbridos ARIMA para modelar explícitamente la volatilidad variable y mejorar la estimación de riesgo en alertas ambientales.
