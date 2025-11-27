@@ -206,12 +206,11 @@ Ahora, con nuestras series transformadas a series estacionarias, la información
 library(patchwork) 
 p1 <- so2_ts |> 
   filter(ESTACION == "Guamani") |> 
-  ACF(SO2, lag_max = 28) |> 
+  ACF(SO2) |> 
   autoplot() + 
-  scale_x_continuous(breaks = seq(0, 28, by = 7)) +
-  geom_vline(xintercept = c(7, 14, 21, 28), linetype = "dotted", color = "red", alpha = 0.5) +
-  labs(title = "Estación Guamaní (Lag 7)", x = NULL) + # Quitamos x para no repetir
-  theme_minimal()
+  labs(title = "ACF de cantidad de SO2 en estación diferenciada Guamani") +
+  facet_wrap(vars(ESTACION), scales = "fixed", ncol = 2) +
+  theme(legend.position = "none")
 
 p1 
 
@@ -223,24 +222,11 @@ p1
 so2_ts |> 
   filter(ESTACION != "Guamani") |> 
   mutate(SO2_diff = difference(SO2)) |> 
-  ACF(SO2_diff, lag_max = 28) |> 
+  ACF(SO2_diff) |> 
   autoplot() + 
-  scale_x_continuous(breaks = seq(0, 28, by = 7), minor_breaks = NULL) +
-  geom_vline(xintercept = c(7, 14, 21, 28), linetype = "dotted", color = "red", alpha = 0.5) +
-  labs(
-    title = "Autocorrelación (ACF): Resto de Estaciones",
-    subtitle = "Doble diferenciación (lag=1 y lag=7)",
-    y = "ACF",
-    x = "Retardo (Días)"
-  ) +
-  
-  facet_wrap(vars(ESTACION), ncol = 2, scales = "fixed") + 
-  theme_light() +
-  theme(
-    legend.position = "none",
-    strip.background = element_rect(fill = "#2C3E50"), # Un color más corporativo/oscuro para los encabezados
-    strip.text = element_text(color = "white")
-  )
+  labs(title = "ACF de cantidad de SO2 en estación diferenciada (excepto Guamani)") +
+  facet_wrap(vars(ESTACION), scales = "fixed", ncol = 2) +
+  theme(legend.position = "none")
 
 ```
 
