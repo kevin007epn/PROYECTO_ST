@@ -90,7 +90,7 @@ so2_diario <- datos_so2 |>
 
 ```{r warning=FALSE, include=FALSE}
 
-vector_estaciones <- c("Belisario", "Carapungo", "Cotocollao", "Tumbaco","Los Chillos","Guamani")
+vector_estaciones <- c("El Camal", "Carapungo", "Cotocollao", "Tumbaco","Los Chillos","Guamani")
 
 so2_ts <- so2_diario |> 
     filter(!is.na(SO2)) |> 
@@ -263,23 +263,19 @@ Gracias a los resultados obtenidos, se ha propuesto los siguientes parámetros p
 
 -   **Guamani (Estación estacionaria por defecto)**
 
-    -   Diferenciación ($d=0, D=1$)
+    -   Diferenciación ($d=0, D=0$)
 
     -   Componente AR ($p=1, P=0$)
 
-    -   Componente MA ($q=1, Q=1$)
-
-    -   Estacionalidad (s=7)
+    -   Componente MA ($q=1, Q=0$)
 
 -   **Estaciones no estacionarias.**
 
-    -   Diferenciación ($d=1, D=1$)
+    -   Diferenciación ($d=1, D=0$)
 
-    -   Componente AR ($p=1, P=0$)
+    -   Componente AR ($p=0, P=0$)
 
-    -   Componente MA ($q=1, Q=1$)
-
-    -   Estacionalidad (s=7)
+    -   Componente MA ($q=2, Q=0$)
 
 ```{r, echo=FALSE, include=FALSE}
 separar_datos_entrenamiento_prueba <- function(tsibble_datos, prop_entrenamiento = 0.8) {
@@ -310,21 +306,21 @@ datos_separados <-separar_datos_entrenamiento_prueba(so2_ts)
 ```{r, echo=FALSE, warning=FALSE}
 # --- PASO 1: Modelos Manuales (Criterio del Investigador) ---
 
-# A. Para Guamaní (Estacionaria): SARIMA(1,0,1)(0,1,1)[7]
+# A. Para Guamaní (Estacionaria): ARIMA(1,0,1)
 fit_guamani <- datos_separados$entrenamiento |>
   filter(ESTACION == "Guamani") |>
   model(
-    Modelo_Propuesto = ARIMA(SO2 ~ pdq(1, 0, 1) + PDQ(0, 0, 1, period = 7)), 
+    Modelo_Propuesto = ARIMA(SO2 ~ pdq(1, 0, 1)), 
     Modelo_Automatico = ARIMA(SO2),
     Modelo_SNAIVE     = SNAIVE(SO2 ~ lag(7)),
     Modelo_Lineal     = TSLM(SO2 ~ trend() + season(period=7))
   )
 
-# B. Para el Resto (No Estacionarias): SARIMA(1,1,1)(0,1,1)[7]
+# B. Para el Resto (No Estacionarias): ARIMA(0,1,2)
 fit_resto <- datos_separados$entrenamiento |>
   filter(ESTACION != "Guamani") |>
   model(
-    Modelo_Propuesto = ARIMA(SO2 ~ pdq(1, 1, 1) + PDQ(0, 1, 1, period = 7)),
+    Modelo_Propuesto = ARIMA(SO2 ~ pdq(0, 1, 2)),
     Modelo_Automatico = ARIMA(SO2),
     Modelo_SNAIVE    = SNAIVE(SO2 ~ lag(7)),
     Modelo_Lineal    = TSLM(SO2 ~ trend() + season(period=7))
