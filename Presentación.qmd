@@ -48,8 +48,6 @@ ruta<-"maate_concentracionso2_2021diciembre.csv"
 
 \##<https://mapcarta.com/es/19666194>\## Fuente de las locaciones
 
-**Sectores de medicion de SO2**
-
 ```{r}
 # 1. Definir coordenadas centrales de los sectores
 ubicaciones_sectores <- data.frame(
@@ -165,6 +163,29 @@ kable(
 
 Basta con la diferencia de orden 1 para que las series sean estacionarias
 
+## Orden de diferencia estacional
+
+Aplicamos el test unitroot_nsdiffs para determinar el número de diferencias estacionales requeridas para llevar a las series a ser estacionarias.
+
+```{r, echo=FALSE}
+
+ordenes_diff_st <- so2_ts |> 
+  features(SO2, unitroot_nsdiffs)
+
+tabla_ordenes <- ordenes_diff_st |> 
+  filter(ESTACION %in% vector_estaciones)
+
+
+kable(
+  tabla_ordenes,
+  caption = "**Órdenes de Diferenciación Estacional Requeridas (nsdiffs)**",
+  col.names = c("Serie", "Orden (d)"), 
+  digits = 0
+)
+```
+
+Por ende, no es necesario diferenciar estacionalmente la serie. Así, aplicamos la diferenciación de la componente no estacional.
+
 ## Series Diferenciadas
 
 ```{r, echo=FALSE, warning=FALSE}
@@ -185,8 +206,7 @@ Ahora, con nuestras series transformadas a series estacionarias, la información
 library(patchwork) 
 p1 <- so2_ts |> 
   filter(ESTACION == "Guamani") |> 
-  mutate(SO2_diff = difference(SO2, lag = 7)) |> 
-  ACF(SO2_diff, lag_max = 28) |> 
+  ACF(SO2, lag_max = 28) |> 
   autoplot() + 
   scale_x_continuous(breaks = seq(0, 28, by = 7)) +
   geom_vline(xintercept = c(7, 14, 21, 28), linetype = "dotted", color = "red", alpha = 0.5) +
@@ -202,7 +222,7 @@ p1
 
 so2_ts |> 
   filter(ESTACION != "Guamani") |> 
-  mutate(SO2_diff = difference(difference(SO2), lag = 7)) |> 
+  mutate(SO2_diff = difference(SO2)) |> 
   ACF(SO2_diff, lag_max = 28) |> 
   autoplot() + 
   scale_x_continuous(breaks = seq(0, 28, by = 7), minor_breaks = NULL) +
@@ -231,8 +251,7 @@ Los gráficos de la ACF, muestran que existe auto-correlación con lags pasados.
 ```{r, echo=FALSE}
 so2_ts |> 
   filter(ESTACION == "Guamani") |>
-  mutate(SO2_diff=difference(SO2, lag = 7)) |> 
-  PACF(SO2_diff) |> 
+  PACF(SO2) |> 
   autoplot() + 
   labs(title = "PACF de cantidad de SO2 en estación diferenciada Guamani") +
   facet_wrap(vars(ESTACION), scales = "fixed", ncol = 2) +
@@ -243,7 +262,7 @@ so2_ts |>
 ```{r, echo=FALSE}
 so2_ts |> 
   filter(ESTACION != "Guamani") |> 
-  mutate(SO2_diff=difference(difference(SO2), lag = 7)) |> 
+  mutate(SO2_diff=difference(SO2)) |> 
   PACF(SO2_diff) |> 
   autoplot() + 
   labs(title = "PACF de cantidad de SO2 por estación diferenciada (excepto Guamani)") +
