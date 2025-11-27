@@ -310,7 +310,7 @@ datos_separados <-separar_datos_entrenamiento_prueba(so2_ts)
 fit_guamani <- datos_separados$entrenamiento |>
   filter(ESTACION == "Guamani") |>
   model(
-    Modelo_Propuesto = ARIMA(SO2 ~ pdq(1, 0, 1)), 
+    Modelo_Propuesto = ARIMA(SO2 ~ pdq(1, 0, 1) + PDQ(0, 0, 0, period=7)), 
     Modelo_Automatico = ARIMA(SO2),
     Modelo_SNAIVE     = SNAIVE(SO2 ~ lag(7)),
     Modelo_Lineal     = TSLM(SO2 ~ trend() + season(period=7))
@@ -320,7 +320,7 @@ fit_guamani <- datos_separados$entrenamiento |>
 fit_resto <- datos_separados$entrenamiento |>
   filter(ESTACION != "Guamani") |>
   model(
-    Modelo_Propuesto = ARIMA(SO2 ~ pdq(0, 1, 2)),
+    Modelo_Propuesto = ARIMA(SO2 ~ pdq(0, 1, 2) + PDQ(0, 0, 0, period=7)),
     Modelo_Automatico = ARIMA(SO2),
     Modelo_SNAIVE    = SNAIVE(SO2 ~ lag(7)),
     Modelo_Lineal    = TSLM(SO2 ~ trend() + season(period=7))
