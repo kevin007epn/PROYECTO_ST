@@ -21,8 +21,6 @@ format:
 
 -   Provoca daño a la vegetación (clorosis) y la corrosión de materiales.
 
-![](images/clipboard-3256375208.jpeg){width="498"}
-
 ## Sectores de medición de SO2
 
 ```{r, echo=FALSE, include=FALSE}
@@ -79,18 +77,18 @@ leaflet() |>
 
 ```{r, echo=FALSE, warning=FALSE}
 datos_so2 <- read.csv(ruta, sep = ";")
-head(datos_so2)
 datos_so2 <- datos_so2 |>  mutate(FECHA=dmy(paste(DIA, MES, ANIO)))
 
 so2_diario <- datos_so2 |> 
   mutate(SO2 = as.numeric(SO2)) 
 
+vector_estaciones <- c("El Camal", "Carapungo", "Cotocollao", "Tumbaco","Los Chillos","Guamani")
+
+vector_estaciones
 
 ```
 
 ```{r warning=FALSE, include=FALSE}
-
-vector_estaciones <- c("El Camal", "Carapungo", "Cotocollao", "Tumbaco","Los Chillos","Guamani")
 
 so2_ts <- so2_diario |> 
     filter(!is.na(SO2)) |> 
@@ -103,7 +101,7 @@ so2_ts <- so2_diario |>
 
 ```
 
-Con la frecuencia diaria, pues, el SO2 al ser una sustancia muy volatil, es de interés saber los días que se alcanzan los máximos durante el año. Además que el SO2 suele estar ligado a la actividad humana, entonces, la medición diaria del SO2 tiene la capacidad de mostrar patrones cruciales. (REFERENCIA)
+Con la frecuencia diaria, pues, el SO2 al ser una sustancia muy volatil, es de interés saber los días que se alcanzan los máximos durante el año. Además que el SO2 suele estar ligado a la actividad humana, entonces, la medición diaria del SO2 tiene la capacidad de mostrar patrones cruciales.
 
 ## Diversidad de las series de interés
 
@@ -364,14 +362,6 @@ kable(tabla_comparativa_2,
 
 Aunque el lineal tiene el mejor AIC, su predicción es peor que los modelos ARIMA (propuesto y Automático)
 
-/////Para la expo
-
-Aunque los criterios de información (AIC) favorecían modelos más simples, la validación cruzada (RMSE) demuestra que los modelos ARIMA (Propuesto y Automático) tienen un error de pronóstico significativamente menor
-
-"Dado que el **Modelo Propuesto** tiene un rendimiento muy similar (y a veces superior) al Automático, y además es un modelo que nosotros hemos parametrizado y entendemos teóricamente, lo seleccionamos como el modelo final para las proyecciones."
-
-/////
-
 Nuestros modelos serán:
 
 ```{r, echo=FALSE}
@@ -510,18 +500,6 @@ modelos_finales |>
 
 El análisis de residuos al cuadrado muestra que la varianza del error no es constante. Existen periodos de alta volatilidad (agrupamiento), especialmente visibles en la estación **Tumbaco**. Además, se observan valores atípicos extremos al inicio de los registros en Carapungo.
 
-///// Para nosotros
-
--   **Carapungo** llega a **3000** (Error altísimo).
-
--   **Guamaní** apenas llega a **200** (Error bajo).
-
--   **Tumbaco** llega a **150**.
-
--   Esto confirma que el modelo se ajusta mucho mejor a Guamaní que a Carapungo (donde los errores al cuadrado son enormes).
-
-/////
-
 ## Estabilidad
 
 ```{r, echo=FALSE, warning=FALSE}
@@ -536,19 +514,6 @@ modelos_finales |>
   theme_minimal()
 
 
-```
-
-```{r,echo=FALSE, warning=FALSE}
-todos_los_modelos <- bind_rows(fit_guamani, fit_resto) 
-tabla_ordenes <- todos_los_modelos |>
-  as_tibble() |> 
-  pivot_longer(cols = c(Modelo_Propuesto), 
-               names_to = "Tipo_Modelo", 
-               values_to = "Objeto_Modelo") |>
-  mutate(Descripcion = format(Objeto_Modelo)) |> 
-  select(ESTACION, Tipo_Modelo, Descripcion)
-
-kable(tabla_ordenes, caption = "Órdenes ARIMA (pdq)(PDQ)")
 ```
 
 ## Pronosticos
@@ -596,7 +561,7 @@ fc1_Camal |>
            level = NULL
   ) +
   labs(
-    x = "2018", 
+    x = "Time", 
     y = "Concentración SO2",
     title = "Pronósticos SO2: El Camal"
   ) +
