@@ -95,15 +95,13 @@ so2_ts <- so2_diario |>
   select(FECHA, ESTACION, SO2)
 
 so2_ts <- so2_ts |> 
-  mutate(SO2 = ifelse(ESTACION == "Carapungo", 
-                    ifelse(year(FECHA) > 2005, SO2, NA), 
-                    SO2)) |> 
-  mutate(SO2 = ifelse(ESTACION == "El Camal", 
-                    ifelse(year(FECHA) > 2014, NA, SO2), 
-                    SO2)) |> 
-  mutate(SO2 = ifelse(ESTACION == "Cotocollao", 
-                    ifelse(year(FECHA) > 2006, SO2, NA), 
-                    SO2))
+  mutate(SO2 = case_when(
+      ESTACION == "Carapungo" & year(FECHA) <= 2005 ~ NA_real_,
+      ESTACION == "Cotocollao" & year(FECHA) <= 2006 ~ NA_real_,
+      ESTACION == "El Camal" & FECHA<= as_date("2016-01-01")~ NA_real_,
+      TRUE ~ SO2
+    ))|> 
+  as_tsibble(index = FECHA, key = ESTACION)
 
 so2_ts <- so2_ts |> 
   filter(!is.na(SO2)) |> 
@@ -111,6 +109,8 @@ so2_ts <- so2_ts |>
   fill_gaps() |> 
   mutate(SO2 = imputeTS::na_seadec(SO2, algorithm = "interpolation", 
                                      find_frequency = TRUE))
+
+so2_ts|> filter(ESTACION=="El Camal")|>autoplot(SO2)
 
 ```
 
@@ -183,12 +183,12 @@ Aplicamos el test unitroot_nsdiffs para determinar el número de diferencias est
 ordenes_diff_st <- so2_ts |> 
   features(SO2, unitroot_nsdiffs)
 
-tabla_ordenes <- ordenes_diff_st |> 
+tabla_ordenes_2 <- ordenes_diff_st |> 
   filter(ESTACION %in% vector_estaciones)
 
 
 kable(
-  tabla_ordenes,
+  tabla_ordenes_2,
   caption = "**Órdenes de Diferenciación Estacional Requeridas (nsdiffs)**",
   col.names = c("Serie", "Orden (d)"), 
   digits = 0
@@ -200,11 +200,19 @@ Por ende, no es necesario diferenciar estacionalmente la serie. Así, aplicamos 
 ## Series Diferenciadas
 
 ```{r, echo=FALSE, warning=FALSE}
+estaciones_d1 <- tabla_ordenes |>
+  filter(ndiffs==1) |>
+  pull(ESTACION)
+
+estaciones_d0<- tabla_ordenes |>
+  filter(ndiffs==0) |>
+  pull(ESTACION)
+
 so2_ts |> 
-  filter(ESTACION != "Guamani") |> 
+  filter(ESTACION %in% estaciones_d1) |> 
   mutate(SO2_diff=difference(SO2)) |> 
   autoplot(SO2_diff) + 
-  labs(title = "Serie diferenciada: \n Cantidad de SO2 por estación (Guamani Excluido)") + 
+  labs(title = "Serie diferenciada: \n Cantidad de SO2 por estación") + 
   facet_wrap(vars(ESTACION), scales = "free_y", ncol = 2) + 
   theme(legend.position = "none")
 ```
@@ -216,10 +224,10 @@ Ahora, con nuestras series transformadas a series estacionarias, la información
 ```{r, echo=FALSE}
 library(patchwork) 
 p1 <- so2_ts |> 
-  filter(ESTACION == "Guamani") |> 
+  filter(ESTACION %in% estaciones_d0) |> 
   ACF(SO2) |> 
   autoplot() + 
-  labs(title = "ACF de cantidad de SO2 en estación Guamani") +
+  labs(title = "ACF de cantidad de SO2") +
   facet_wrap(vars(ESTACION), scales = "fixed", ncol = 2) +
   theme(legend.position = "none")
 
@@ -231,7 +239,7 @@ p1
 ```{r, echo=FALSE}
 
 so2_ts |> 
-  filter(ESTACION != "Guamani") |> 
+  filter(ESTACION %in% estaciones_d1) |> 
   mutate(SO2_diff = difference(SO2)) |> 
   ACF(SO2_diff) |> 
   autoplot() + 
@@ -247,7 +255,7 @@ Los gráficos de la ACF, muestran que existe auto-correlación con lags pasados.
 
 ```{r, echo=FALSE}
 so2_ts |> 
-  filter(ESTACION == "Guamani") |>
+  filter(ESTACION %in% estaciones_d0) |>
   PACF(SO2) |> 
   autoplot() + 
   labs(title = "PACF de cantidad de SO2 en estación Guamani") +
@@ -258,7 +266,7 @@ so2_ts |>
 
 ```{r, echo=FALSE}
 so2_ts |> 
-  filter(ESTACION != "Guamani") |> 
+  filter(ESTACION %in% estaciones_d1) |> 
   mutate(SO2_diff=difference(SO2)) |> 
   PACF(SO2_diff) |> 
   autoplot() + 
@@ -290,27 +298,34 @@ Gracias a los resultados obtenidos, se ha propuesto los siguientes parámetros p
 
 ```{r, echo=FALSE, include=FALSE}
 separar_datos_entrenamiento_prueba <- function(tsibble_datos, prop_entrenamiento = 0.8) {
-
+  
   if (!inherits(tsibble_datos, "tbl_ts")) {
     stop("La entrada debe ser un objeto tsibble.")
   }
 
-  datos_entrenamiento <- tsibble_datos |>
-    group_by(ESTACION) |> 
-    slice_head(prop = prop_entrenamiento) |> 
+  datos_ordenados <- tsibble_datos |>
+    arrange(ESTACION, FECHA) 
+  
+  datos_entrenamiento <- datos_ordenados |>
+    group_by(ESTACION) |>
+    mutate(fila_corte = floor(n() * prop_entrenamiento)) |>
+    slice(1:unique(fila_corte)) |> 
+    select(-fila_corte) |> 
     ungroup()
-
-  datos_prueba <- tsibble_datos |>
-    group_by(ESTACION) |> 
-    slice_tail(prop = 1 - prop_entrenamiento) |> 
+  
+  # 3. Definimos prueba tomando desde N+1 hasta el final
+  datos_prueba <- datos_ordenados |>
+    group_by(ESTACION) |>
+    mutate(fila_corte = floor(n() * prop_entrenamiento)) |>
+    slice((unique(fila_corte) + 1):n()) |> # Toma desde el corte+1 hasta el final
+    select(-fila_corte) |>
     ungroup()
-
+  
   return(list(
     entrenamiento = datos_entrenamiento,
     prueba = datos_prueba
   ))
 }
-
 datos_separados <-separar_datos_entrenamiento_prueba(so2_ts)
 ```
 
@@ -329,7 +344,7 @@ fit_guamani <- datos_separados$entrenamiento |>
 
 # B. Para el Resto (No Estacionarias): ARIMA(0,1,2)
 fit_resto <- datos_separados$entrenamiento |>
-  filter(ESTACION != "Guamani") |>
+  filter(ESTACION %in% estaciones_d1) |>
   model(
     Modelo_Propuesto = ARIMA(SO2 ~ pdq(0, 1, 2) + PDQ(0, 0, 0, period=7)),
     Modelo_Automatico = ARIMA(SO2),
@@ -337,7 +352,14 @@ fit_resto <- datos_separados$entrenamiento |>
     Modelo_Lineal    = TSLM(SO2 ~ trend() + season(period=7))
   )
 
-
+fit_camal<- datos_separados$entrenamiento |>
+  filter(ESTACION == "El Camal") |>
+  model(
+    Modelo_Propuesto = ARIMA(SO2 ~ pdq(1, 0, 2) + PDQ(0, 0, 0, period=7)),
+    Modelo_Automatico = ARIMA(SO2),
+    Modelo_SNAIVE    = SNAIVE(SO2 ~ lag(7)),
+    Modelo_Lineal   = TSLM(SO2 ~ trend() + season(period=7))
+  )
 ```
 
 ## Implementación (AIC,BIC, Parsimonia)
@@ -346,7 +368,10 @@ fit_resto <- datos_separados$entrenamiento |>
 glance_guamani <- glance(fit_guamani)
 
 glance_resto   <- glance(fit_resto)
-tabla_comparativa_1 <- bind_rows(glance_guamani, glance_resto) |>
+
+glance_camal <- glance(fit_camal)
+
+tabla_comparativa_1 <- bind_rows(glance_guamani, glance_resto,glance_camal) |>
   filter(.model != "Modelo_SNAIVE") |>
   select(ESTACION, MODELO = .model, AIC, AICc, BIC) |>
   arrange(ESTACION, AICc)
@@ -364,7 +389,7 @@ Comparando los modelos: Propuesto y Automático
 -   Ambos modelos tratan de capturar la misma dinámica y convergen a resultados parecidos
 
 ```{r, echo=FALSE}
-tabla_comparativa_2 <- accuracy(bind_rows(fit_guamani, fit_resto)) |>
+tabla_comparativa_2 <- accuracy(bind_rows(fit_guamani, fit_resto,fit_camal)) |>
   select(ESTACION, Modelo = .model, RMSE, MAE) |>
   arrange(ESTACION, RMSE)
 
@@ -378,7 +403,7 @@ Aunque el lineal tiene el mejor AIC, su predicción es peor que los modelos ARIM
 Nuestros modelos serán:
 
 ```{r, echo=FALSE}
-todos_los_modelos <- bind_rows(fit_guamani, fit_resto) 
+todos_los_modelos <- bind_rows(fit_guamani, fit_resto,fit_camal) 
 tabla_ordenes <- todos_los_modelos |>
   as_tibble() |> 
   pivot_longer(cols = c(Modelo_Propuesto, Modelo_Automatico), 
@@ -395,10 +420,9 @@ kable(tabla_ordenes, caption = "Órdenes ARIMA (pdq)(PDQ)")
 ```{r, echo=FALSE, warning=FALSE}
 ##Maxima verosimilitud modelos anteriores
 #Estimaciones del mejor modelo de cada estacion
-coeficientes_mle <- bind_rows(fit_guamani, fit_resto) |>
+coeficientes_mle <- bind_rows(fit_guamani, fit_resto,fit_camal) |>
   select(-Modelo_Lineal)|>
   tidy() 
-
 
 # Mostrar tabla
 kable(coeficientes_mle, caption = "Coeficientes Estimados (MLE) - Solo ARIMA")
@@ -408,7 +432,7 @@ kable(coeficientes_mle, caption = "Coeficientes Estimados (MLE) - Solo ARIMA")
 
 ```{r, echo=FALSE, warning=FALSE}
 #Unificación de modelos para diagnóstico masivo
-modelos_finales <- bind_rows(fit_guamani, fit_resto)
+modelos_finales <- bind_rows(fit_guamani, fit_resto,fit_camal)
 ```
 
 ```{r, echo=FALSE}
@@ -531,125 +555,123 @@ modelos_finales |>
 
 ## Pronosticos
 
-```{r,echo=FALSE, warning=FALSE}
-h <- 6 * 7 
-h2 <- 60 * 7 
+```{r, echo=FALSE, warning=FALSE}
+#Guamani
+h<-7
+test_guamani <- datos_separados$prueba |> filter(ESTACION == "Guamani")
+h_guamani <- nrow(test_guamani) + h
 
-fc1_guamani <- fit_guamani |>
-  forecast(h = h)
+fc_guamani <- fit_guamani |>
+  forecast(h = h_guamani)
 
-fc1_resto <- fit_resto |>
-  filter(ESTACION != "El Camal") |> 
-  forecast(h = h)
+inicio_zoom_guamani <- min(test_guamani$FECHA)-months(2)
 
-fc1_Camal <- fit_resto |>
-  filter(ESTACION == "El Camal") |> 
-  forecast(h = h2) 
-
-# 3. Gráfico Corregido
-fc1_guamani |>
+fc_guamani |>
   autoplot(
-    so2_ts |> 
-      filter(ESTACION == "Guamani", 
-             yearmonth(FECHA) >= yearmonth("2018-01"),
-             yearmonth(FECHA) <= yearmonth("2018-03")),
-    level = NULL 
+    datos_separados$entrenamiento |> 
+      filter(ESTACION == "Guamani", FECHA >= inicio_zoom_guamani),
+    level = NULL
   ) +
+  autolayer(test_guamani, SO2, colour = "black") +
+  geom_vline(xintercept = as.numeric(min(test_guamani$FECHA)), linetype="dotted", alpha=0.5) +
   labs(
-    x = "2018", 
-    y = expression(paste("Concentración ", SO[2], " (", mu, "g/m"^3, ")")),
-    title = "Pronósticos de concentración de SO2 en Guamaní"
+    title = "Guamaní: Detalle de Transición y Pronóstico",
+    subtitle = "Zoom: Últimos 2 meses de entrenamiento + Test + Futuro",
+    y = expression(paste("Concentración ", SO[2], " (", mu, "g/m"^3, ")"))
+  ) 
+```
+
+```{r,echo=FALSE, warning=FALSE}
+#El Camal
+h<-7
+test_camal <- datos_separados$prueba |> filter(ESTACION == "El Camal")
+h_camal <- nrow(test_camal) + h
+
+fc_camal <- fit_camal |>
+  forecast(h = h_camal)
+
+inicio_zoom_camal <- min(test_camal$FECHA)-months(2)
+
+fc_camal |>
+  autoplot(
+    datos_separados$entrenamiento |> 
+      filter(ESTACION == "El Camal", FECHA >= inicio_zoom_camal),
+    level = NULL
   ) +
-  guides(colour = guide_legend(title = "Modelos"))
+  autolayer(test_camal, SO2, colour = "black") +
+  geom_vline(xintercept = as.numeric(min(test_camal$FECHA)), linetype="dotted", alpha=0.5) +
+  labs(
+    title = "El Camal: Detalle de Transición y Pronóstico",
+    subtitle = "Zoom: Últimos 2 meses de entrenamiento + Test + Futuro",
+    y = expression(paste("Concentración ", SO[2], " (", mu, "g/m"^3, ")"))
+  ) 
 ```
 
 ```{r,echo=FALSE, warning=FALSE}
 # Camal
-fc1_Camal |> 
-  filter(ESTACION == "El Camal") |>
-  autoplot(so2_ts |> 
-             filter(ESTACION == "El Camal", 
-                    yearmonth(FECHA) >= yearmonth("2016-01") & 
-                    yearmonth(FECHA) <= yearmonth("2017-04")),
-           level = NULL
-  ) +
-  labs(
-    x = "Time", 
-    y = "Concentración SO2",
-    title = "Pronósticos SO2: El Camal"
-  ) +
-  guides(colour = guide_legend(title = "Modelos"))
-```
-
-```{r,echo=FALSE, warning=FALSE}
-# Carapungo
-fc1_resto |> 
-  filter(ESTACION == "Carapungo") |>
-  autoplot(so2_ts |> 
-             filter(yearmonth(FECHA) >= yearmonth("2016-03") &
-                      yearmonth(FECHA) <= yearmonth("2016-05")), 
-           level = NULL
-  ) +
-  labs(
-    x = "2016", y = "SO2 HG/m^3",
-    title = "Pronósticos de la cantidad de S02 en Carapungo"
-  ) +
-  guides(colour = guide_legend(title = "Modelos"))
-
-```
-
-```{r,echo=FALSE, warning=FALSE}
-# Cotocollao
-fc1_resto |> 
-  filter(ESTACION == "Cotocollao") |>
-  autoplot(so2_ts |> 
-             filter(yearmonth(FECHA) >= yearmonth("2016-03") &
-                      yearmonth(FECHA) <= yearmonth("2016-05")), 
-           level = NULL
-  ) +
-  labs(
-    x = "2016", y = "SO2 HG/m^3",
-    title = "Pronósticos de la cantidad de S02 en Cotocollao"
-  ) +
-  guides(colour = guide_legend(title = "Modelos"))
-```
-
-```{r,echo=FALSE, warning=FALSE}
-# Tumbaco
-fc1_resto |> 
-  filter(ESTACION == "Tumbaco") |>
-  autoplot(so2_ts |> 
-             filter(yearmonth(FECHA) >= yearmonth("2017-01") &
-                      yearmonth(FECHA) <= yearmonth("2017-02")), 
-           level = NULL
-  ) +
-  labs(
-    x = "2017", y = "SO2 HG/m^3",
-    title = "Pronósticos de la cantidad de S02 en Tumbaco"
-  ) +
-  guides(colour = guide_legend(title = "Modelos"))
-```
-
-```{r,echo=FALSE, warning=FALSE}
-# Los Chillos
-fc1_resto |> 
-  filter(ESTACION == "Los Chillos") |>
-  autoplot(so2_ts |> 
-             filter(yearmonth(FECHA) >= yearmonth("2017-10") &
-                      yearmonth(FECHA) <= yearmonth("2017-11")), 
-           level = NULL
-  ) +
-  labs(
-    x = "2017", y = "SO2 HG/m^3",
-    title = "Pronósticos de la cantidad de S02 en Los Chillos"
-  ) +
-  guides(colour = guide_legend(title = "Modelos"))
+  datos_train_resto <- datos_separados$entrenamiento |>
+    filter(!ESTACION %in% estaciones_d0)
+  
+  datos_test_resto <- datos_separados$prueba |>
+    filter(!ESTACION %in% estaciones_d0)
+  
+  
+fit_resto <- datos_train_resto |>
+  model(
+    Modelo_Propuesto  = ARIMA(SO2 ~ pdq(0, 1, 2) + PDQ(0, 0, 0, period = 7)),
+    Modelo_Automatico = ARIMA(SO2),
+    Modelo_SNAIVE     = SNAIVE(SO2 ~ lag(7)),
+    Modelo_Lineal     = TSLM(SO2 ~ trend() + season(period = 7))
+  )
+  # --- 3. Pronóstico Extendido ---
+  # Calculamos el horizonte necesario: Máxima longitud del test + 7 días
+  h_resto <- datos_test_resto |> count(ESTACION) |> pull(n) |> max() + 7
+  
+  fc_resto <- fit_resto |>
+    forecast(h = h_resto)
+  
+  # --- 4. Gráfico con Zoom y Facetas ---
+  
+  fecha_inicio_zoom <- min(datos_test_resto$FECHA) - months(2)
+  
+  lista_estaciones <- unique(fc_resto$ESTACION)
+  
+  # 2. Generar un gráfico por cada estación
+  for (nombre_estacion in lista_estaciones) {
+    
+    # A. Filtrar datos específicos para esta estación
+    fc_actual    <- fc_resto |> filter(ESTACION == nombre_estacion)
+    test_actual  <- datos_test_resto |> filter(ESTACION == nombre_estacion)
+    train_actual <- datos_train_resto |> filter(ESTACION == nombre_estacion)
+    
+    # B. Definir Zoom (3 meses antes del inicio del test de ESTA estación)
+    fecha_zoom <- min(test_actual$FECHA) - months(3)
+    
+    # C. Crear el gráfico
+    p <- fc_actual |>
+      autoplot(
+        train_actual |> filter(FECHA >= fecha_zoom),
+        level = NULL
+      ) +
+      autolayer(test_actual, SO2, colour = "black") +
+      geom_vline(xintercept = as.numeric(min(test_actual$FECHA)), 
+                 linetype = "dotted", alpha = 0.5) +
+      labs(
+        title = paste("Estación:", nombre_estacion),
+        subtitle = "Validación y Pronóstico (Zoom 2 meses)",
+        y = expression(paste("Concentración ", SO[2], " (", mu, "g/m"^3, ")"))
+      ) +
+      theme_minimal()
+    
+    # D. Imprimir el gráfico (Necesario dentro de un bucle)
+    print(p)
+  }
 ```
 
 ## Mejor modelo
 
 ```{r,echo=FALSE, warning=FALSE}
-todos_modelos <- bind_rows(fit_guamani, fit_resto)
+todos_modelos <- bind_rows(fit_guamani, fit_resto,fit_camal)
 metricas_rmse <- accuracy(todos_modelos) |> 
   select(ESTACION, .model, RMSE)
 metricas_aic <- glance(todos_modelos) |> 
@@ -669,7 +691,7 @@ kable(tabla_mejores,
 ## Discusion
 
 ```{r,echo=FALSE, warning=FALSE}
-coeficientes_propuestos <- bind_rows(fit_guamani, fit_resto) |>
+coeficientes_propuestos <- bind_rows(fit_guamani, fit_resto,fit_camal) |>
   select(ESTACION, Modelo_Propuesto) |> # Seleccionamos solo el modelo manual
   tidy() |> 
   select(ESTACION, Termino = term, Estimacion = estimate, Error_Std = std.error, P_Valor = p.value)
