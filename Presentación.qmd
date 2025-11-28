@@ -280,7 +280,17 @@ so2_ts |>
 
 Gracias a los resultados obtenidos, se ha propuesto los siguientes parámetros para el modelamiento:
 
--   **Guamani (Estación estacionaria por defecto)**
+-   **Camal (Estación estacionaria)**
+
+    -   Diferenciación ($d=0, D=0$)
+
+    -   Componente AR ($p=1, P=0$)
+
+    -   Componente MA ($q=2, Q=0$)
+
+<!-- -->
+
+-   **Guamani (Estación estacionaria)**
 
     -   Diferenciación ($d=0, D=0$)
 
